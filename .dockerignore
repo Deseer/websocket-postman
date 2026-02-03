@@ -1,0 +1,38 @@
+# Git
+.git/
+.gitignore
+
+# Virtual Environment
+.venv/
+venv/
+
+# IDE
+.idea/
+.vscode/
+
+# Cache
+__pycache__/
+*.pyc
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# Logs and data (will be mounted as volumes)
+logs/
+data/
+
+# Node modules (not needed in production)
+node_modules/
+
+# Development files
+*.md
+LICENSE
+tests/
+webui/
+
+# Config (will be mounted)
+config/
+
+# Agent workspace
+.agent/
+.gemini/

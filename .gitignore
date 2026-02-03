@@ -41,7 +41,7 @@ data/                 # 数据库文件
 *.db
 *.sqlite
 *.sqlite3
-
+*.log
 # Frontend (keep build artifacts, ignore node_modules)
 node_modules/
 

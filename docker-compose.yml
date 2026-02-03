@@ -1,0 +1,29 @@
+version: '3.8'
+
+services:
+  ws-dispatcher:
+    build: .
+    container_name: ws-dispatcher
+    restart: unless-stopped
+    ports:
+      - "8080:8080" # WebUI
+      - "8765:8765" # NapCat WS 连接端口
+    volumes:
+      # 持久化配置和数据
+      - ./config:/app/config
+      - ./logs:/app/logs
+      - ./data:/app/data
+    environment:
+      - TZ=Asia/Shanghai
+    healthcheck:
+      test: [ "CMD", "curl", "-f", "http://localhost:8080/api/health" ]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+    networks:
+      - bot-network
+
+networks:
+  bot-network:
+    driver: bridge
