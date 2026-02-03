@@ -1,0 +1,47 @@
+logging:
+  file: ./logs/dispatcher.log
+categories:
+- id: pjsk-2vd6
+  name: pjsk-2vd6
+  display_name: pjsk
+connections:
+- id: hrkbot
+  name: hrkbot
+  url: ws://localhost:8000/ws
+- id: sakurabot-6qgi
+  name: sakurabot
+  url: ws://101.34.19.31:13888/onebot/v11/ws
+  token: ''
+command_sets:
+- id: hrkbot-339v
+  name: hrkbot
+  prefix: ''
+  category: pjsk-2vd6
+  is_public: true
+  target_ws: hrkbot
+  strip_prefix: true
+  is_default: true
+  commands:
+  - name: /个人信息
+- id: lunabot-3mgm
+  name: lunabot
+  prefix: ''
+  category: pjsk-2vd6
+  is_public: true
+  target_ws: ''
+- id: sakurabot-40j2
+  name: sakurabot
+  prefix: ''
+  category: pjsk-2vd6
+  is_public: true
+  target_ws: sakurabot-6qgi
+  strip_prefix: true
+  commands:
+  - name: /个人信息
+final:
+  target_ws: ''
+  message: 未知指令，请使用 /help 查看帮助
+  send_message: false
+server: {}
+database: {}
+admins: []

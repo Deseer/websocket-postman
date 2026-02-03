@@ -1,0 +1,66 @@
+# WebSocket 指令分配器 - 配置示例
+# 复制此文件为 config.yaml 并修改
+
+logging:
+  level: INFO
+  file: ./logs/dispatcher.log
+
+server:
+  host: 0.0.0.0
+  port: 8080      # WebUI 端口
+  ws_port: 8765   # NapCat 连接端口
+
+database:
+  url: sqlite+aiosqlite:///./data/dispatcher.db
+
+# 分类配置
+# 分类用于组织指令集，同一分类下的指令集可以互斥（用户只能选择一个）
+categories:
+  - id: pjsk
+    name: pjsk
+    display_name: Project Sekai
+    description: 世界计划相关Bot
+    allow_user_switch: true  # 允许用户自行切换
+    is_mutex: true  # 互斥模式，用户同时只能使用一个
+
+# 连接配置
+# 配置要连接的上游 Bot 服务
+connections:
+  - id: mybot
+    name: 我的Bot
+    url: ws://localhost:3001/onebot/v11/ws
+    token: ""  # OneBot v11 access_token（如有）
+    auto_reconnect: true
+    reconnect_interval: 5
+
+# 指令集配置
+command_sets:
+  - id: bot1
+    name: Bot1
+    category: pjsk
+    target_ws: mybot
+    is_public: true
+    strip_prefix: true  # 转发时去掉指令前缀
+    is_default: true  # 该分类的默认指令集
+    commands:
+      - name: /个人信息
+        aliases: [/info, /查询]
+        description: 查询个人信息
+      - name: /抽卡
+        is_privileged: true  # 需要特权才能使用
+        description: 模拟抽卡
+
+# 黑白名单配置
+access_lists: []
+
+# 默认规则
+# 当指令没有匹配任何指令集时的处理方式
+final:
+  action: reject  # reject: 拒绝 | allow: 放行 | forward: 转发
+  message: 未知指令，请使用 /help 查看帮助
+  send_message: true  # 是否发送拒绝消息
+  target_ws: ""  # forward 模式时的目标连接
+
+# 管理员配置
+# 管理员 QQ 号列表，拥有所有权限
+admins: []
