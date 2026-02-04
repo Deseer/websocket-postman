@@ -10,7 +10,12 @@
       </div>
       
       <el-table :data="connections" stripe v-loading="loading">
-        <el-table-column prop="name" label="名称" />
+        <el-table-column prop="id" label="ID" width="150">
+          <template #default="{ row }">
+            <code class="id-code">{{ row.id }}</code>
+          </template>
+        </el-table-column>
+        <el-table-column prop="name" label="名称" width="150" />
         <el-table-column prop="url" label="地址" show-overflow-tooltip />
         <el-table-column label="自动重连" width="100">
           <template #default="{ row }">
@@ -129,8 +134,15 @@ const form = ref({
 // 生成 ID
 const generateId = (name) => {
   const base = name
-    ? name.toLowerCase().replace(/[^a-z0-9\u4e00-\u9fa5]/g, '-').replace(/-+/g, '-').slice(0, 20)
+    ? name.toLowerCase().replace(/[^a-z0-9]/g, '-').replace(/-+/g, '-').replace(/^-|-$/g, '').slice(0, 20)
     : ''
+  
+  // 如果基础名已经足够唯一且包含非空内容，且长度适中，可以尝试不加后缀（或者让用户必填）
+  // 这里为了兼容性，如果名称是纯英文数字，则不加随机后缀，方便用户记忆
+  if (/^[a-z0-9-]+$/.test(base) && base.length > 2) {
+    return base
+  }
+  
   const suffix = Date.now().toString(36).slice(-4)
   return base ? `${base}-${suffix}` : `conn-${suffix}`
 }
@@ -244,5 +256,12 @@ onMounted(fetchData)
   color: #999;
   font-size: 12px;
   margin-top: 5px;
+}
+.id-code {
+  background: #f0f2f5;
+  padding: 2px 4px;
+  border-radius: 4px;
+  font-family: monospace;
+  font-size: 12px;
 }
 </style>

@@ -6,13 +6,16 @@ services:
     container_name: ws-dispatcher
     restart: unless-stopped
     ports:
-      - "8080:8080" # WebUI
+      - "7200:8080" # WebUI
       - "8765:8765" # NapCat WS 连接端口
     volumes:
       # 持久化配置和数据
       - ./config:/app/config
       - ./logs:/app/logs
       - ./data:/app/data
+      - ./src:/app/src # 挂载源码，方便热更新
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     environment:
       - TZ=Asia/Shanghai
     healthcheck:

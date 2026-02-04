@@ -87,3 +87,5 @@ pip-delete-this-directory.txt
 # Agent/Gemini workspace
 .agent/
 .gemini/
+
+config/config.yaml

@@ -1,4 +1,5 @@
 """连接管理 API"""
+
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
@@ -10,6 +11,7 @@ router = APIRouter()
 
 class ConnectionCreate(BaseModel):
     """创建连接请求"""
+
     id: str
     name: str
     url: str
@@ -21,6 +23,7 @@ class ConnectionCreate(BaseModel):
 
 class ConnectionUpdate(BaseModel):
     """更新连接请求"""
+
     name: str | None = None
     url: str | None = None
     token: str | None = None
@@ -34,22 +37,24 @@ async def get_connections():
     """获取所有连接状态"""
     ws_manager = WebSocketClientManager.instance()
     status = ws_manager.get_status()
-    
+
     config = get_config()
-    
+
     result = []
     for conn_config in config.connections:
         conn_status = status.get(conn_config.id, {})
-        result.append({
-            "id": conn_config.id,
-            "name": conn_config.name,
-            "url": conn_config.url,
-            "auto_reconnect": conn_config.auto_reconnect,
-            "reconnect_interval": conn_config.reconnect_interval,
-            "allow_forward": getattr(conn_config, 'allow_forward', False),
-            "connected": conn_status.get("connected", False),
-        })
-    
+        result.append(
+            {
+                "id": conn_config.id,
+                "name": conn_config.name,
+                "url": conn_config.url,
+                "auto_reconnect": conn_config.auto_reconnect,
+                "reconnect_interval": conn_config.reconnect_interval,
+                "allow_forward": getattr(conn_config, "allow_forward", False),
+                "connected": conn_status.get("connected", False),
+            }
+        )
+
     return result
 
 
@@ -57,12 +62,12 @@ async def get_connections():
 async def create_connection(data: ConnectionCreate):
     """创建连接"""
     config = get_config()
-    
+
     # 检查 ID 是否已存在
     for conn in config.connections:
         if conn.id == data.id:
             raise HTTPException(status_code=400, detail="连接 ID 已存在")
-    
+
     # 添加连接配置
     new_connection = ConnectionConfig(
         id=data.id,
@@ -74,10 +79,10 @@ async def create_connection(data: ConnectionCreate):
         allow_forward=data.allow_forward,
     )
     config.connections.append(new_connection)
-    
+
     # 保存配置
     ConfigManager.save(config)
-    
+
     # 添加到管理器并连接
     ws_manager = WebSocketClientManager.instance()
     conn = await ws_manager.add_connection(
@@ -89,7 +94,7 @@ async def create_connection(data: ConnectionCreate):
         reconnect_interval=data.reconnect_interval,
     )
     await conn.connect()
-    
+
     return {"message": "连接创建成功", "id": data.id}
 
 
@@ -97,17 +102,17 @@ async def create_connection(data: ConnectionCreate):
 async def update_connection(connection_id: str, data: ConnectionUpdate):
     """更新连接"""
     config = get_config()
-    
+
     # 查找连接
     target_conn = None
     for conn in config.connections:
         if conn.id == connection_id:
             target_conn = conn
             break
-    
+
     if target_conn is None:
         raise HTTPException(status_code=404, detail="连接不存在")
-    
+
     # 更新字段
     if data.name is not None:
         target_conn.name = data.name
@@ -119,10 +124,30 @@ async def update_connection(connection_id: str, data: ConnectionUpdate):
         target_conn.reconnect_interval = data.reconnect_interval
     if data.allow_forward is not None:
         target_conn.allow_forward = data.allow_forward
-    
+
     # 保存配置
     ConfigManager.save(config)
-    
+
+    # 同步更新管理器
+    ws_manager = WebSocketClientManager.instance()
+    # 如果 ID 没变，直接更新现有连接
+    conn = ws_manager.get_connection(connection_id)
+    if conn:
+        # 简单粗暴的方法：移除并重新添加，以确保所有属性生效
+        await ws_manager.remove_connection(connection_id)
+
+    # 重新添加连接（即使 ID 没变，重新创建对象最稳妥）
+    new_conn = await ws_manager.add_connection(
+        id=target_conn.id,
+        name=target_conn.name,
+        url=target_conn.url,
+        token=target_conn.token,
+        auto_reconnect=target_conn.auto_reconnect,
+        reconnect_interval=target_conn.reconnect_interval,
+    )
+    # 自动重连
+    await new_conn.connect()
+
     return {"message": "连接更新成功"}
 
 
@@ -130,7 +155,7 @@ async def update_connection(connection_id: str, data: ConnectionUpdate):
 async def delete_connection(connection_id: str):
     """删除连接"""
     config = get_config()
-    
+
     # 查找并删除连接
     for i, conn in enumerate(config.connections):
         if conn.id == connection_id:
@@ -138,14 +163,14 @@ async def delete_connection(connection_id: str):
             break
     else:
         raise HTTPException(status_code=404, detail="连接不存在")
-    
+
     # 保存配置
     ConfigManager.save(config)
-    
+
     # 从管理器中移除并断开连接
     ws_manager = WebSocketClientManager.instance()
     await ws_manager.remove_connection(connection_id)
-    
+
     return {"message": "连接删除成功"}
 
 
@@ -154,12 +179,12 @@ async def connect_connection(connection_id: str):
     """连接到上游服务"""
     ws_manager = WebSocketClientManager.instance()
     conn = ws_manager.get_connection(connection_id)
-    
+
     if conn is None:
         raise HTTPException(status_code=404, detail="连接不存在")
-    
+
     success = await conn.connect()
-    
+
     if success:
         return {"message": "连接成功"}
     else:
@@ -171,10 +196,10 @@ async def disconnect_connection(connection_id: str):
     """断开连接"""
     ws_manager = WebSocketClientManager.instance()
     conn = ws_manager.get_connection(connection_id)
-    
+
     if conn is None:
         raise HTTPException(status_code=404, detail="连接不存在")
-    
+
     await conn.disconnect()
-    
+
     return {"message": "已断开连接"}

@@ -1,4 +1,5 @@
 """应用入口"""
+
 import asyncio
 import json
 from contextlib import asynccontextmanager
@@ -26,62 +27,62 @@ ws_client_manager: WebSocketClientManager | None = None
 async def lifespan(app: FastAPI):
     """应用生命周期管理"""
     global ws_server, ws_client_manager
-    
+
     # 启动时
     config = get_config()
-    
+
     # 初始化日志
     setup_logger(
         log_level=config.logging.level,
         log_file=config.logging.file,
     )
-    
+
     logger.info("正在启动 WebSocket 指令分配器...")
-    
+
     # 初始化数据库
     await DatabaseManager.init()
-    
+
     # 初始化路由器
     router = CommandRouter()
     router.load_from_config()
-    
+
     # 初始化 WebSocket 客户端管理器
     ws_client_manager = WebSocketClientManager.instance()
     await ws_client_manager.init_from_config()
-    
+
     # 设置全局消息处理器，用于将 Bot 的回复回传给 NapCat
     async def global_bot_message_handler(conn_id: str, message: str):
         # 简单透传：将 Bot 发出的所有 JSON 指令转发给所有连接的 NapCat 客户端
         if ws_server:
             logger.debug(f"回传来自 {conn_id} 的消息: {message[:100]}")
             await ws_server.broadcast(message)
-            
+
     ws_client_manager.set_message_handler(global_bot_message_handler)
-    
+
     await ws_client_manager.connect_all()
-    
+
     # 启动 WebSocket 服务端
     ws_server = NapCatWSServer()
     await ws_server.start(
         host=config.server.host,
         port=config.server.ws_port,
     )
-    
+
     logger.info("WebSocket 指令分配器启动完成!")
-    
+
     yield
-    
+
     # 关闭时
     logger.info("正在关闭 WebSocket 指令分配器...")
-    
+
     if ws_server:
         await ws_server.stop()
-    
+
     if ws_client_manager:
         await ws_client_manager.disconnect_all()
-    
+
     await DatabaseManager.close()
-    
+
     logger.info("WebSocket 指令分配器已关闭")
 
 
@@ -103,7 +104,14 @@ app.add_middleware(
 )
 
 # 导入 API 路由
-from src.api.routes import categories, command_sets, users, connections, monitor, access_lists
+from src.api.routes import (
+    categories,
+    command_sets,
+    users,
+    connections,
+    monitor,
+    access_lists,
+)
 
 app.include_router(categories.router, prefix="/api/categories", tags=["分类管理"])
 app.include_router(command_sets.router, prefix="/api/command-sets", tags=["指令集管理"])
@@ -127,54 +135,58 @@ log_ws_clients: set[WebSocket] = set()
 async def log_websocket(websocket: WebSocket):
     """日志实时推送 WebSocket 端点"""
     import re
-    
+
     await websocket.accept()
     log_ws_clients.add(websocket)
-    
+
     config = get_config()
     log_file = config.logging.file
-    
+
     try:
         if not log_file:
             await websocket.send_json({"error": "日志文件未配置"})
             return
-        
+
         log_path = Path(log_file)
         if not log_path.exists():
             await websocket.send_json({"error": f"日志文件不存在: {log_file}"})
             return
-        
+
         # 日志解析正则
         pattern = r"^(\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}) \| (\w+)\s+\| (.+)$"
-        
+
         # 先发送最后 100 行历史日志
         with open(log_path, "r", encoding="utf-8") as f:
             lines = f.readlines()
             recent_lines = lines[-100:] if len(lines) > 100 else lines
-            
+
             for line in recent_lines:
                 line = line.strip()
                 if not line:
                     continue
                 match = re.match(pattern, line)
                 if match:
-                    await websocket.send_json({
-                        "time": match.group(1),
-                        "level": match.group(2),
-                        "message": match.group(3),
-                    })
+                    await websocket.send_json(
+                        {
+                            "time": match.group(1),
+                            "level": match.group(2),
+                            "message": match.group(3),
+                        }
+                    )
                 else:
-                    await websocket.send_json({
-                        "time": "",
-                        "level": "INFO",
-                        "message": line,
-                    })
-        
+                    await websocket.send_json(
+                        {
+                            "time": "",
+                            "level": "INFO",
+                            "message": line,
+                        }
+                    )
+
         # 然后监控新日志
         with open(log_path, "r", encoding="utf-8") as f:
             # 跳到文件末尾
             f.seek(0, 2)
-            
+
             while True:
                 line = f.readline()
                 if line:
@@ -182,20 +194,24 @@ async def log_websocket(websocket: WebSocket):
                     if line:
                         match = re.match(pattern, line)
                         if match:
-                            await websocket.send_json({
-                                "time": match.group(1),
-                                "level": match.group(2),
-                                "message": match.group(3),
-                            })
+                            await websocket.send_json(
+                                {
+                                    "time": match.group(1),
+                                    "level": match.group(2),
+                                    "message": match.group(3),
+                                }
+                            )
                         else:
-                            await websocket.send_json({
-                                "time": "",
-                                "level": "INFO",
-                                "message": line,
-                            })
+                            await websocket.send_json(
+                                {
+                                    "time": "",
+                                    "level": "INFO",
+                                    "message": line,
+                                }
+                            )
                 else:
                     await asyncio.sleep(0.5)
-    
+
     except WebSocketDisconnect:
         pass
     except Exception as e:
@@ -250,7 +266,7 @@ async def get_config_api():
             "action": config.final.action,
             "target_ws": config.final.target_ws,
             "message": config.final.message,
-            "send_message": getattr(config.final, 'send_message', True),
+            "send_message": getattr(config.final, "send_message", True),
         },
         "admins": config.admins,
         "categories_count": len(config.categories),
@@ -262,8 +278,10 @@ async def get_config_api():
 from pydantic import BaseModel
 from typing import Any
 
+
 class ConfigUpdate(BaseModel):
     """配置更新请求"""
+
     server: dict | None = None
     database: dict | None = None
     logging: dict | None = None
@@ -275,31 +293,31 @@ class ConfigUpdate(BaseModel):
 async def update_config_api(data: ConfigUpdate):
     """更新配置"""
     config = get_config()
-    
+
     if data.server:
         config.server.host = data.server.get("host", config.server.host)
         config.server.port = data.server.get("port", config.server.port)
         config.server.ws_port = data.server.get("ws_port", config.server.ws_port)
-    
+
     if data.database:
         config.database.url = data.database.get("url", config.database.url)
-    
+
     if data.logging:
         config.logging.level = data.logging.get("level", config.logging.level)
         config.logging.file = data.logging.get("file", config.logging.file)
-    
+
     if data.final:
         config.final.action = data.final.get("action", config.final.action)
         config.final.target_ws = data.final.get("target_ws", config.final.target_ws)
         config.final.message = data.final.get("message", config.final.message)
         if "send_message" in data.final:
             config.final.send_message = data.final.get("send_message")
-    
+
     if data.admins is not None:
         config.admins = data.admins
-    
+
     ConfigManager.save(config)
-    
+
     return {"message": "配置更新成功，请重启服务使配置生效"}
 
 
@@ -307,7 +325,7 @@ def main():
     """主函数"""
     # 加载配置
     config = ConfigManager.load()
-    
+
     # 启动服务
     uvicorn.run(
         "src.main:app",
