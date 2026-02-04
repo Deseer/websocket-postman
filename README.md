@@ -19,7 +19,7 @@
 ### 1. 克隆项目
 
 ```bash
-git clone https://github.com/yourname/websocket-postman.git
+git clone https://github.com/Deseer/websocket-postman
 cd websocket-postman
 ```
 
