@@ -45,8 +45,8 @@ class Command:
     is_privileged: bool = False
     time_restriction: TimeRange | None = None
     group_restriction: list[int] = field(default_factory=list)
-    user_whitelist: list[int] = field(default_factory=list)
-    user_blacklist: list[int] = field(default_factory=list)
+    user_whitelist: list[int | str] = field(default_factory=list)
+    user_blacklist: list[int | str] = field(default_factory=list)
 
     @classmethod
     def from_config(cls, config: dict[str, Any]) -> "Command":

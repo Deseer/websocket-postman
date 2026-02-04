@@ -26,10 +26,10 @@ class CommandParser:
     """指令解析器"""
 
     # 指令前缀正则：可爱风格:/chat 你好
-    PREFIX_PATTERN = re.compile(r"^(.+?):(/\S+)(.*)$")
+    PREFIX_PATTERN = re.compile(r"^(.+?):([/#]\S+)(.*)$")
 
-    # 普通指令正则：/chat 你好
-    COMMAND_PATTERN = re.compile(r"^(/\S+)(.*)$")
+    # 普通指令正则：/chat 你好 或 #chat 你好
+    COMMAND_PATTERN = re.compile(r"^([/#]\S+)(.*)$")
 
     def __init__(self, command_prefixes: list[str] | None = None):
         """
@@ -54,10 +54,10 @@ class CommandParser:
             self._combined_pattern = None
             return
 
-        # 构造正则：^(前缀1|前缀2|...)([:\s]*)(/\S+)(.*)$
+        # 构造正则：^(前缀1|前缀2|...)([:\s]*)([/#]\S+)(.*)$
         # prefix 后面可以接可选的冒号或空格
         prefixes_esc = [re.escape(p) for p in self.command_prefixes]
-        pattern_str = f"^({'|'.join(prefixes_esc)})([:\\s]*)(/\\S+)(.*)$"
+        pattern_str = f"^({'|'.join(prefixes_esc)})([:\\\\s]*)([/#]\\\\S+)(.*)$"
         self._combined_pattern = re.compile(pattern_str)
 
     def parse(self, message: str) -> ParsedCommand:

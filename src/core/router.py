@@ -154,19 +154,40 @@ class CommandRouter:
         # 获取用户
         user = await self.get_or_create_user(user_id, nickname)
 
+        # 提取消息开头的 @（CQ:at）段，用于后续转发时保留
+        at_prefix = ""
+        clean_message = message
+        at_pattern = re.compile(r"^(\s*\[CQ:at,[^\]]*\]\s*)+")
+        at_match = at_pattern.match(message)
+        if at_match:
+            at_prefix = at_match.group(0)
+            clean_message = message[at_match.end() :].strip()
+
         # 检查是否为强制指令集路由（格式：指令集名 指令）
         forced_result = await self._try_forced_route(
-            message, user, group_id, self_id, raw_event
+            clean_message,
+            user,
+            group_id,
+            self_id,
+            raw_event,
+            at_prefix=at_prefix,
         )
         if forced_result:
             return forced_result
 
-        # 解析指令
-        parsed = self._parser.parse(message)
+        # 解析指令（使用去掉 @ 前缀的消息）
+        parsed = self._parser.parse(clean_message)
 
         if not parsed.is_command:
-            # 不是指令，应用 final 规则
-            return await self._apply_final_rule(message)
+            # 不是以 / 或 # 开头的指令，但仍然尝试用原始文本匹配已注册的指令（支持无前缀指令）
+            # 构造一个虚拟的 ParsedCommand 用于 _find_command
+            parsed = ParsedCommand(
+                raw=clean_message,
+                prefix=None,
+                command=clean_message,
+                args="",
+                is_command=True,
+            )
 
         # 检查是否为系统指令
         system_result = await self._handle_system_command(parsed, user, group_id)
@@ -185,7 +206,7 @@ class CommandRouter:
 
         # 检查权限
         permission_result = self._permission_checker.check_command_permission(
-            user, command, group_id
+            user, command, group_id, self_id=self_id
         )
 
         if not permission_result.allowed:
@@ -201,7 +222,7 @@ class CommandRouter:
             if final_args:
                 base_content += f" {final_args}"
         else:
-            base_content = message
+            base_content = clean_message
             # 如果是无前缀但匹配成功的，可能也需要重构消息以清理多余空格
             if corrected_args is not None:
                 base_content = f"{command.name} {final_args}".strip()
@@ -212,6 +233,10 @@ class CommandRouter:
             final_message = re.sub(r"^[^\w\u4e00-\u9fa5]+", "", base_content)
         else:
             final_message = base_content
+
+        # 重新加上 @ 前缀（保留 at 信息用于转发）
+        if at_prefix:
+            final_message = at_prefix + final_message
 
         response = await self._forward_to_ws(
             target_ws=command_set.target_ws,
@@ -330,6 +355,7 @@ class CommandRouter:
         group_id: int | None,
         self_id: int = 0,
         raw_event: dict | None = None,
+        at_prefix: str = "",
     ) -> RouteResult | None:
         """
         尝试强制指令集路由
@@ -339,25 +365,20 @@ class CommandRouter:
         """
         import re
 
-        # 匹配格式：指令集名(非空白字符) 空格 指令
-        match = re.match(r"^(\S+)\s+(/\S+.*)$", message.strip())
+        # 匹配格式：指令集名(非空白字符) 空格 后续内容（支持任意前缀或无前缀）
+        match = re.match(r"^(\S+)\s+(\S+.*)$", message.strip())
         if not match:
             return None
 
         cs_name = match.group(1).lower()
         actual_command = match.group(2)
 
-        # 查找指定的指令集
+        # 查找指定的指令集（仅当名称命中时才进入强制路由）
         target_cs = self._name_to_set.get(cs_name)
         if not target_cs:
             return None
 
-        # 解析实际指令
-        parsed = self._parser.parse(actual_command)
-        if not parsed.is_command:
-            return None
-
-        # 查找指令（最长前缀匹配）
+        # 查找指令（最长前缀匹配，支持有前缀和无前缀的指令）
         match = target_cs.find_match(actual_command)
         if not match:
             return RouteResult(
@@ -370,7 +391,7 @@ class CommandRouter:
 
         # 检查权限
         permission_result = self._permission_checker.check_command_permission(
-            user, cmd, group_id
+            user, cmd, group_id, self_id=self_id
         )
 
         if not permission_result.allowed:
@@ -390,6 +411,10 @@ class CommandRouter:
             final_message = re.sub(r"^[^\w\u4e00-\u9fa5]+", "", base_content)
         else:
             final_message = base_content
+
+        # 重新加上 @ 前缀
+        if at_prefix:
+            final_message = at_prefix + final_message
 
         response = await self._forward_to_ws(
             target_ws=target_cs.target_ws,

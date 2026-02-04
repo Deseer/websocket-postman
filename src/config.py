@@ -1,4 +1,5 @@
 """配置加载模块"""
+
 import os
 from pathlib import Path
 from typing import Any
@@ -12,24 +13,27 @@ from src.utils.logger import logger
 
 class TimeRestriction(BaseModel):
     """时间限制配置"""
+
     start: str = "00:00"
     end: str = "23:59"
 
 
 class CommandConfig(BaseModel):
     """单个指令配置"""
+
     name: str
     aliases: list[str] = Field(default_factory=list)
     description: str = ""
     is_privileged: bool = False
     time_restriction: TimeRestriction | None = None
     group_restriction: list[int] = Field(default_factory=list)
-    user_whitelist: list[int] = Field(default_factory=list)
-    user_blacklist: list[int] = Field(default_factory=list)
+    user_whitelist: list[int | str] = Field(default_factory=list)
+    user_blacklist: list[int | str] = Field(default_factory=list)
 
 
 class CommandSetConfig(BaseModel):
     """指令集配置"""
+
     id: str
     name: str
     prefix: str | None = None
@@ -48,6 +52,7 @@ class CommandSetConfig(BaseModel):
 
 class CategoryConfig(BaseModel):
     """分类配置"""
+
     id: str
     name: str
     display_name: str
@@ -62,6 +67,7 @@ class CategoryConfig(BaseModel):
 
 class AccessListConfig(BaseModel):
     """黑白名单配置"""
+
     id: str
     name: str
     type: str  # "user" | "group"
@@ -71,6 +77,7 @@ class AccessListConfig(BaseModel):
 
 class ConnectionConfig(BaseModel):
     """WebSocket 连接配置"""
+
     id: str
     name: str
     url: str
@@ -82,6 +89,7 @@ class ConnectionConfig(BaseModel):
 
 class FinalConfig(BaseModel):
     """Final 规则配置"""
+
     action: str = "reject"  # reject / allow / forward
     target_ws: str | None = None
     message: str = "未知指令"
@@ -90,6 +98,7 @@ class FinalConfig(BaseModel):
 
 class ServerConfig(BaseModel):
     """服务器配置"""
+
     host: str = "0.0.0.0"
     port: int = 8080
     ws_port: int = 8765
@@ -97,17 +106,20 @@ class ServerConfig(BaseModel):
 
 class DatabaseConfig(BaseModel):
     """数据库配置"""
+
     url: str = "sqlite+aiosqlite:///./data/dispatcher.db"
 
 
 class LoggingConfig(BaseModel):
     """日志配置"""
+
     level: str = "INFO"
     file: str | None = None
 
 
 class AppConfig(BaseModel):
     """应用总配置"""
+
     server: ServerConfig = Field(default_factory=ServerConfig)
     database: DatabaseConfig = Field(default_factory=DatabaseConfig)
     logging: LoggingConfig = Field(default_factory=LoggingConfig)
@@ -121,48 +133,48 @@ class AppConfig(BaseModel):
 
 class ConfigManager:
     """配置管理器"""
-    
+
     _instance: "ConfigManager | None" = None
     _config: AppConfig | None = None
     _config_path: Path | None = None
-    
+
     def __new__(cls):
         if cls._instance is None:
             cls._instance = super().__new__(cls)
         return cls._instance
-    
+
     @classmethod
     def load(cls, config_path: str | Path | None = None) -> AppConfig:
         """加载配置文件"""
         instance = cls()
-        
+
         if config_path is None:
             # 默认配置路径
             config_path = Path("config/config.yaml")
             if not config_path.exists():
                 config_path = Path("config/config.example.yaml")
-        
+
         config_path = Path(config_path)
         instance._config_path = config_path
-        
+
         if not config_path.exists():
             logger.warning(f"配置文件不存在: {config_path}, 使用默认配置")
             instance._config = AppConfig()
             return instance._config
-        
+
         try:
             with open(config_path, "r", encoding="utf-8") as f:
                 config_data = yaml.safe_load(f)
-            
+
             instance._config = AppConfig(**config_data)
             logger.info(f"配置加载成功: {config_path}")
-            
+
         except Exception as e:
             logger.error(f"配置加载失败: {e}")
             instance._config = AppConfig()
-        
+
         return instance._config
-    
+
     @classmethod
     def get(cls) -> AppConfig:
         """获取当前配置"""
@@ -170,7 +182,7 @@ class ConfigManager:
         if instance._config is None:
             return cls.load()
         return instance._config
-    
+
     @classmethod
     def reload(cls) -> AppConfig:
         """重新加载配置"""
@@ -178,46 +190,53 @@ class ConfigManager:
         if instance._config_path:
             return cls.load(instance._config_path)
         return cls.load()
-    
+
     @classmethod
     def save(cls, config: AppConfig | None = None) -> bool:
         """保存配置到文件"""
         instance = cls()
         if config:
             instance._config = config
-        
+
         if instance._config is None or instance._config_path is None:
             logger.error("无法保存配置: 配置未初始化")
             return False
-        
+
         try:
-            # 使用 exclude_defaults 减少冗余，exclude_none 去除 null 值
+            # exclude_none 去除 null 值，保留所有已设置的字段
             config_dict = instance._config.model_dump(
-                exclude_defaults=True,
                 exclude_none=True,
             )
-            
+
             # 确保必要的顶级键存在
-            for key in ['server', 'database', 'logging', 'categories', 
-                        'connections', 'command_sets', 'final', 'admins']:
+            for key in [
+                "server",
+                "database",
+                "logging",
+                "categories",
+                "connections",
+                "command_sets",
+                "final",
+                "admins",
+            ]:
                 if key not in config_dict:
-                    if key in ['categories', 'connections', 'command_sets', 'admins']:
+                    if key in ["categories", "connections", "command_sets", "admins"]:
                         config_dict[key] = []
                     else:
                         config_dict[key] = {}
-            
+
             with open(instance._config_path, "w", encoding="utf-8") as f:
                 yaml.dump(
-                    config_dict, 
-                    f, 
-                    allow_unicode=True, 
+                    config_dict,
+                    f,
+                    allow_unicode=True,
                     default_flow_style=False,
                     sort_keys=False,  # 保持字段顺序
                 )
-            
+
             logger.info(f"配置保存成功: {instance._config_path}")
             return True
-            
+
         except Exception as e:
             logger.error(f"配置保存失败: {e}")
             return False
