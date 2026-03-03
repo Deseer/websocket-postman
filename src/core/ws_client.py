@@ -21,6 +21,7 @@ class WebSocketConnection:
     token: str | None = None  # OneBot v11 认证 Token
     auto_reconnect: bool = True
     reconnect_interval: int = 5
+    allow_forward: bool = False  # 是否允许此连接主动回推到 NapCat 客户端
 
     _ws: WebSocketClientProtocol | None = field(default=None, repr=False)
     _connected: bool = field(default=False, repr=False)
@@ -229,6 +230,7 @@ class WebSocketClientManager:
                 conn_config.token,
                 conn_config.auto_reconnect,
                 conn_config.reconnect_interval,
+                getattr(conn_config, "allow_forward", False),
             )
 
     async def add_connection(
@@ -239,6 +241,7 @@ class WebSocketClientManager:
         token: str | None = None,
         auto_reconnect: bool = True,
         reconnect_interval: int = 5,
+        allow_forward: bool = False,
     ) -> WebSocketConnection:
         """添加连接"""
         conn = WebSocketConnection(
@@ -248,6 +251,7 @@ class WebSocketClientManager:
             token=token,
             auto_reconnect=auto_reconnect,
             reconnect_interval=reconnect_interval,
+            allow_forward=allow_forward,
         )
         self._connections[id] = conn
         return conn
@@ -319,6 +323,7 @@ class WebSocketClientManager:
                 "name": conn.name,
                 "url": conn.url,
                 "connected": conn.connected,
+                "allow_forward": conn.allow_forward,
             }
             for conn in self._connections.values()
         }

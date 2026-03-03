@@ -96,7 +96,7 @@
         </el-form-item>
         <el-form-item label="允许转发">
           <el-switch v-model="form.allow_forward" />
-          <div class="form-tip">开启后，此连接可以主动发起消息并转发到其他连接</div>
+          <div class="form-tip">开启后，此连接收到的上游消息会主动回推到已连接的 NapCat / QQ 客户端</div>
         </el-form-item>
       </el-form>
       

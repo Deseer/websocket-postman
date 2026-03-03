@@ -52,7 +52,13 @@ async def lifespan(app: FastAPI):
 
     # 设置全局消息处理器，用于将 Bot 的回复回传给 NapCat
     async def global_bot_message_handler(conn_id: str, message: str):
-        # 简单透传：将 Bot 发出的所有 JSON 指令转发给所有连接的 NapCat 客户端
+        # 仅允许开启 allow_forward 的连接主动回推到 NapCat 客户端
+        source_conn = ws_client_manager.get_connection(conn_id) if ws_client_manager else None
+        if source_conn is None or not getattr(source_conn, "allow_forward", False):
+            logger.debug(f"连接 {conn_id} 未开启 allow_forward，忽略主动回推")
+            return
+
+        # 简单透传：将 Bot 发出的 JSON 指令转发给所有连接的 NapCat 客户端
         if ws_server:
             logger.debug(f"回传来自 {conn_id} 的消息: {message[:100]}")
             await ws_server.broadcast(message)

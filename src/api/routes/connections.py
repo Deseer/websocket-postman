@@ -92,6 +92,7 @@ async def create_connection(data: ConnectionCreate):
         token=data.token,
         auto_reconnect=data.auto_reconnect,
         reconnect_interval=data.reconnect_interval,
+        allow_forward=data.allow_forward,
     )
     await conn.connect()
 
@@ -144,6 +145,7 @@ async def update_connection(connection_id: str, data: ConnectionUpdate):
         token=target_conn.token,
         auto_reconnect=target_conn.auto_reconnect,
         reconnect_interval=target_conn.reconnect_interval,
+        allow_forward=getattr(target_conn, "allow_forward", False),
     )
     # 自动重连
     await new_conn.connect()
