@@ -109,6 +109,13 @@ class CommandRouter:
             # 名称映射（用于强制指令集路由）
             self._name_to_set[cs.name.lower()] = cs
 
+        # 从指令集的 is_default 设置分类的默认指令集
+        for cs in self._command_sets:
+            if cs.is_default and cs.category:
+                cat = next((c for c in self._categories if c.id == cs.category), None)
+                if cat and not cat.default_command_set:
+                    cat.default_command_set = cs.id
+
     async def get_or_create_user(self, qq_id: int, nickname: str = "") -> User:
         """获取或创建用户"""
         async with DatabaseManager.session() as session:
@@ -222,10 +229,10 @@ class CommandRouter:
             if final_args:
                 base_content += f" {final_args}"
         else:
-            base_content = clean_message
-            # 如果是无前缀但匹配成功的，可能也需要重构消息以清理多余空格
-            if corrected_args is not None:
-                base_content = f"{command.name} {final_args}".strip()
+            # 无指令集前缀，使用匹配到的指令名 + 参数来构建转发内容
+            base_content = command.name
+            if final_args:
+                base_content += f" {final_args}"
 
         # 处理指令符号剥离 (由 strip_prefix 配置决定)
         if command_set.strip_prefix:
@@ -301,8 +308,13 @@ class CommandRouter:
                     selected_style_id = (user.selected_styles or {}).get(cs.category)
                     active_style_id = selected_style_id or category.default_command_set
 
-                    # 如果分类强制互斥，且当前风格不是选中的也不是默认的，则跳过
-                    if active_style_id and cs.id != active_style_id:
+                    # 如果分类强制互斥
+                    if active_style_id:
+                        # 有选中或默认风格，只允许匹配的指令集通过
+                        if cs.id != active_style_id:
+                            continue
+                    else:
+                        # 没有选中风格也没有默认风格，互斥分类下所有指令集都不匹配
                         continue
 
             matches.append((cs, cmd, args))

@@ -82,6 +82,7 @@ class CommandSet:
     target_ws: str = ""
     priority: int = 0
     strip_prefix: bool = False
+    is_default: bool = False
     commands: list[Command] = field(default_factory=list)
 
     @classmethod
@@ -99,6 +100,7 @@ class CommandSet:
             target_ws=config.get("target_ws", ""),
             priority=config.get("priority", 0),
             strip_prefix=config.get("strip_prefix", False),
+            is_default=config.get("is_default", False),
             commands=commands,
         )
 
