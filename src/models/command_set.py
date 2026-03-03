@@ -1,5 +1,6 @@
 """指令集相关数据模型（内存中的运行时模型）"""
 
+import re
 from dataclasses import dataclass, field
 from datetime import time
 from typing import Any
@@ -111,10 +112,91 @@ class CommandSet:
                 return cmd
         return None
 
-    def find_match(self, text: str) -> tuple[Command, str] | None:
+    _CQ_AT_QQ_PATTERN = re.compile(r"qq=([^,\]]+)")
+    _PLACEHOLDER_PATTERN = re.compile(r"@(any|self)")
+    _CQ_AT_OR_TEXT_AT_PATTERN = r"(?:\[CQ:at,[^\]]*?\]|@\S+)"
+    _CQ_SELF_OR_LITERAL_PATTERN = r"(?:\[CQ:at,[^\]]*?\]|@self|@\S+)"
+
+    @classmethod
+    def _extract_qq_from_cq_at(cls, token: str) -> str | None:
+        """从 CQ at 码中提取 qq 参数"""
+        match = cls._CQ_AT_QQ_PATTERN.search(token)
+        if match:
+            return match.group(1)
+        return None
+
+    @classmethod
+    def _match_with_placeholders(
+        cls,
+        matcher: str,
+        text: str,
+        self_id: int = 0,
+    ) -> int | None:
+        """支持 @any/@self 占位符的前缀匹配，返回匹配长度"""
+        parts: list[str] = []
+        self_groups: list[str] = []
+
+        last_end = 0
+        self_group_idx = 0
+        previous_was_placeholder = False
+        for placeholder_match in cls._PLACEHOLDER_PATTERN.finditer(matcher):
+            literal_segment = matcher[last_end : placeholder_match.start()]
+            if literal_segment:
+                # 兼容 @self/xxx 与 @self /xxx 两种写法
+                if previous_was_placeholder and literal_segment[0] in {"/", "#"}:
+                    parts.append(r"\s*")
+                parts.append(re.escape(literal_segment))
+
+            placeholder_type = placeholder_match.group(1)
+
+            if placeholder_type == "any":
+                parts.append(cls._CQ_AT_OR_TEXT_AT_PATTERN)
+            else:
+                group_name = f"self_at_{self_group_idx}"
+                parts.append(
+                    fr"(?P<{group_name}>{cls._CQ_SELF_OR_LITERAL_PATTERN})"
+                )
+                self_groups.append(group_name)
+                self_group_idx += 1
+
+            previous_was_placeholder = True
+            last_end = placeholder_match.end()
+
+        tail_segment = matcher[last_end:]
+        if tail_segment:
+            # 兼容 @self/xxx 与 @self /xxx 两种写法
+            if previous_was_placeholder and tail_segment[0] in {"/", "#"}:
+                parts.append(r"\s*")
+            parts.append(re.escape(tail_segment))
+
+        pattern = re.compile("^" + "".join(parts))
+        match = pattern.match(text)
+        if not match:
+            return None
+
+        # @self 必须匹配到当前 bot（self_id）或显式字面量 @self
+        expected_self_id = str(self_id)
+        for group_name in self_groups:
+            token = match.group(group_name)
+            if token == "@self":
+                continue
+            if token.startswith("@"):
+                # 纯文本 @昵称 无法从原文稳定还原 qq，按 @self 处理
+                continue
+            qq = cls._extract_qq_from_cq_at(token)
+            if qq is None or qq != expected_self_id:
+                return None
+
+        return match.end()
+
+    def find_match(
+        self,
+        text: str,
+        self_id: int = 0,
+    ) -> tuple[Command, str, str] | None:
         """
-        在文本开头寻找匹配的指令（最长前缀匹配）
-        返回: (匹配的指令, 剩余的参数)
+        在文本开头寻找匹配的指令（最长前缀匹配，支持 @any/@self 占位符）
+        返回: (匹配的指令, 剩余参数, 实际匹配到的指令文本)
         """
         if not text:
             return None
@@ -130,10 +212,19 @@ class CommandSet:
         all_matchers.sort(key=lambda x: len(x[0]), reverse=True)
 
         for name, cmd in all_matchers:
+            if "@any" in name or "@self" in name:
+                match_len = self._match_with_placeholders(name, text, self_id=self_id)
+                if match_len is None:
+                    continue
+
+                matched_text = text[:match_len]
+                args = text[match_len:].strip()
+                return cmd, args, matched_text
+
             if text.startswith(name):
                 # 匹配成功，提取参数（去掉匹配到的指令名，并清除首尾空格）
                 args = text[len(name) :].strip()
-                return cmd, args
+                return cmd, args, name
         return None
 
 

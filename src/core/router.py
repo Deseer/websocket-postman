@@ -206,8 +206,13 @@ class CommandRouter:
         if system_result:
             return system_result
 
-        # 查找指令集和指令（返回指令集、指令以及修正后的参数）
-        command_set, command, corrected_args = await self._find_command(parsed, user)
+        # 查找指令集和指令（返回指令集、指令、修正参数和实际匹配命令文本）
+        command_set, command, corrected_args, matched_command_text = await self._find_command(
+            parsed,
+            user,
+            self_id=self_id,
+            raw_message=message.strip(),
+        )
 
         if command_set is None or command is None:
             # 没有找到指令，应用 final 规则
@@ -227,27 +232,33 @@ class CommandRouter:
                 error_message=permission_result.message,
             )
 
-        # 构建转发的消息内容：无论如何都剥离内部前缀 (如 skr)
-        if parsed.prefix:
-            # 使用修正后的指令名 + 参数
-            base_content = command.name
-            if final_args:
-                base_content += f" {final_args}"
+        # 构建转发消息：若配置命令本身含占位符，则使用用户实际匹配文本
+        if "@any" in command.name or "@self" in command.name:
+            command_text = matched_command_text or command.name
         else:
-            # 无指令集前缀，使用匹配到的指令名 + 参数来构建转发内容
-            base_content = command.name
-            if final_args:
-                base_content += f" {final_args}"
+            command_text = command.name
+
+        base_content = command_text
+        if final_args:
+            base_content += f" {final_args}"
 
         # 处理指令符号剥离 (由 strip_prefix 配置决定)
         if command_set.strip_prefix:
-            # 剥离开头的非字母数字字符 (如 / 或其他前缀符号)
-            final_message = re.sub(r"^[^\w\u4e00-\u9fa5]+", "", base_content)
+            # 保留开头 CQ at 段，仅剥离实际命令部分前导符号
+            leading_at = ""
+            command_body = base_content
+            leading_at_match = re.match(r"^(\s*(?:\[CQ:at,[^\]]*\]\s*)+)(.*)$", base_content)
+            if leading_at_match:
+                leading_at = leading_at_match.group(1)
+                command_body = leading_at_match.group(2)
+
+            command_body = re.sub(r"^[^\w\u4e00-\u9fa5]+", "", command_body)
+            final_message = f"{leading_at}{command_body}"
         else:
             final_message = base_content
 
-        # 重新加上 @ 前缀（保留 at 信息用于转发）
-        if at_prefix:
+        # 重新加上 @ 前缀（若消息中已包含则不重复添加）
+        if at_prefix and not final_message.lstrip().startswith(at_prefix.strip()):
             final_message = at_prefix + final_message
 
         response = await self._forward_to_ws(
@@ -271,21 +282,30 @@ class CommandRouter:
         self,
         parsed: ParsedCommand,
         user: User,
-    ) -> tuple[CommandSet | None, Command | None, str | None]:
-        """查找指令对应的指令集。返回 (指令集, 指令, 修正后的参数)"""
+        self_id: int = 0,
+        raw_message: str | None = None,
+    ) -> tuple[CommandSet | None, Command | None, str | None, str | None]:
+        """查找指令对应的指令集。返回 (指令集, 指令, 修正参数, 实际匹配命令文本)"""
         # 准备待匹配的全文本（指令 + 参数）
         full_text = parsed.command
         if parsed.args:
             full_text = f"{parsed.command} {parsed.args}"
+        full_text = full_text.strip()
+
+        candidate_texts = [full_text] if full_text else []
+        raw_text = (raw_message or "").strip()
+        if raw_text and raw_text not in candidate_texts:
+            candidate_texts.append(raw_text)
 
         # 如果有前缀，优先在对应指令集中通过「最长匹配」查找
         if parsed.prefix:
             cs = self._prefix_map.get(parsed.prefix)
             if cs:
-                match = cs.find_match(full_text)
-                if match:
-                    cmd, args = match
-                    return cs, cmd, args
+                for candidate_text in candidate_texts:
+                    match = cs.find_match(candidate_text, self_id=self_id)
+                    if match:
+                        cmd, args, matched_command_text = match
+                        return cs, cmd, args, matched_command_text
 
         # 优先级路由：
         # 1. 如果是公共指令集且包含此指令，记录下来但不作为唯一选择（因为用户可能有更具体的选择）
@@ -293,15 +313,20 @@ class CommandRouter:
         # 3. 检查分类下的默认选择
         # 4. 最后才是宽泛匹配
 
-        matches: list[tuple[CommandSet, Command, str]] = []
+        matches: list[tuple[CommandSet, Command, str, str]] = []
 
         # 查找所有匹配的指令集，并应用互斥过滤
         for cs in self._command_sets:
-            match = cs.find_match(full_text)
+            match = None
+            for candidate_text in candidate_texts:
+                match = cs.find_match(candidate_text, self_id=self_id)
+                if match:
+                    break
+
             if not match:
                 continue
 
-            cmd, args = match
+            cmd, args, matched_command_text = match
 
             # 互斥检查
             if cs.category:
@@ -322,18 +347,18 @@ class CommandRouter:
                         # 没有选中风格也没有默认风格，互斥分类下所有指令集都不匹配
                         continue
 
-            matches.append((cs, cmd, args))
+            matches.append((cs, cmd, args, matched_command_text))
 
         if not matches:
-            return None, None, None
+            return None, None, None, None
 
         # 排序策略：
         # - 用户选择的风格优先
         # - 优先级 (priority) 高的优先
         # - 公共指令集次之
 
-        def score_match(match: tuple[CommandSet, Command, str]):
-            cs, cmd, _ = match
+        def score_match(match: tuple[CommandSet, Command, str, str]):
+            cs, cmd, _, _ = match
             score = 0
 
             # 基础分：优先级
@@ -387,16 +412,40 @@ class CommandRouter:
         if not match:
             return None
 
-        cs_name = match.group(1).lower()
+        first_token = match.group(1)
+        cs_name = first_token.lower()
         actual_command = match.group(2)
 
         # 查找指定的指令集（仅当名称命中时才进入强制路由）
         target_cs = self._name_to_set.get(cs_name)
+        if target_cs is None and "@" in cs_name:
+            # 兼容「指令集名@某人 /指令」格式，例如：luna@Mizuki /enable
+            for known_name in sorted(self._name_to_set.keys(), key=len, reverse=True):
+                if not cs_name.startswith(known_name):
+                    continue
+                mention_part = first_token[len(known_name) :]
+                if not mention_part.startswith("@"):
+                    continue
+                target_cs = self._name_to_set[known_name]
+                actual_command = f"{mention_part} {actual_command}".strip()
+                break
+
         if not target_cs:
             return None
 
-        # 查找指令（最长前缀匹配，支持有前缀和无前缀的指令）
-        match = target_cs.find_match(actual_command)
+        # 查找指令（支持 @self/@any 占位符）
+        command_candidates = [actual_command]
+        if at_prefix:
+            actual_with_at = f"{at_prefix}{actual_command}".strip()
+            if actual_with_at not in command_candidates:
+                command_candidates.append(actual_with_at)
+
+        match = None
+        for candidate in command_candidates:
+            match = target_cs.find_match(candidate, self_id=self_id)
+            if match:
+                break
+
         if not match:
             return RouteResult(
                 success=False,
@@ -404,7 +453,7 @@ class CommandRouter:
                 is_system_command=True,
             )
 
-        cmd, args = match
+        cmd, args, matched_command_text = match
 
         # 检查权限
         permission_result = self._permission_checker.check_command_permission(
@@ -418,19 +467,32 @@ class CommandRouter:
             )
 
         # 构建转发的消息内容
-        base_content = cmd.name
+        if "@any" in cmd.name or "@self" in cmd.name:
+            command_text = matched_command_text or cmd.name
+        else:
+            command_text = cmd.name
+
+        base_content = command_text
         if args:
             base_content += f" {args}"
 
         # 转发到目标 WebSocket
         if target_cs.strip_prefix:
-            # 剥离开头的非字母数字字符 (如 / 或其他前缀符号)
-            final_message = re.sub(r"^[^\w\u4e00-\u9fa5]+", "", base_content)
+            # 保留开头 CQ at 段，仅剥离实际命令部分前导符号
+            leading_at = ""
+            command_body = base_content
+            leading_at_match = re.match(r"^(\s*(?:\[CQ:at,[^\]]*\]\s*)+)(.*)$", base_content)
+            if leading_at_match:
+                leading_at = leading_at_match.group(1)
+                command_body = leading_at_match.group(2)
+
+            command_body = re.sub(r"^[^\w\u4e00-\u9fa5]+", "", command_body)
+            final_message = f"{leading_at}{command_body}"
         else:
             final_message = base_content
 
         # 重新加上 @ 前缀
-        if at_prefix:
+        if at_prefix and not final_message.lstrip().startswith(at_prefix.strip()):
             final_message = at_prefix + final_message
 
         response = await self._forward_to_ws(

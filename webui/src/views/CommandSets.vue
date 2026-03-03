@@ -273,6 +273,9 @@
 
             <!-- 指令列表 -->
             <el-form-item label="指令列表">
+              <div class="form-tip" style="margin-bottom: 8px">
+                支持占位符：<code>@any</code>（@任意人）、<code>@self</code>（@机器人本身），例如 <code>@self/enable</code>、<code>/ban @any</code>
+              </div>
               <div class="commands-editor">
                 <div
                   v-for="(cmd, index) in commandSetForm.commands"
@@ -730,6 +733,11 @@ onMounted(fetchData)
   margin: 0 0 15px 0;
   padding: 0 10px;
   font-size: 14px;
+}
+
+.form-tip {
+  color: #909399;
+  font-size: 12px;
 }
 
 .commands-editor {
