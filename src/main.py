@@ -220,31 +220,6 @@ async def log_websocket(websocket: WebSocket):
         log_ws_clients.discard(websocket)
 
 
-# 静态文件服务 - 放在 API 路由之后
-from pathlib import Path
-
-STATIC_DIR = Path(__file__).parent.parent / "static"
-
-
-@app.get("/")
-async def serve_root():
-    """根路径返回 index.html"""
-    return FileResponse(STATIC_DIR / "index.html")
-
-
-# 挂载静态资源
-app.mount("/assets", StaticFiles(directory=STATIC_DIR / "assets"), name="static-assets")
-
-
-@app.get("/{full_path:path}")
-async def serve_spa(full_path: str):
-    """SPA 路由回退 - 所有未匹配的路径返回 index.html"""
-    file_path = STATIC_DIR / full_path
-    if file_path.exists() and file_path.is_file():
-        return FileResponse(file_path)
-    return FileResponse(STATIC_DIR / "index.html")
-
-
 @app.get("/api/config")
 async def get_config_api():
     """获取配置信息"""
@@ -319,6 +294,28 @@ async def update_config_api(data: ConfigUpdate):
     ConfigManager.save(config)
 
     return {"message": "配置更新成功，请重启服务使配置生效"}
+
+
+STATIC_DIR = Path(__file__).parent.parent / "static"
+
+
+@app.get("/")
+async def serve_root():
+    """根路径返回 index.html"""
+    return FileResponse(STATIC_DIR / "index.html")
+
+
+# 挂载静态资源
+app.mount("/assets", StaticFiles(directory=STATIC_DIR / "assets"), name="static-assets")
+
+
+@app.get("/{full_path:path}")
+async def serve_spa(full_path: str):
+    """SPA 路由回退 - 所有未匹配的路径返回 index.html"""
+    file_path = STATIC_DIR / full_path
+    if file_path.exists() and file_path.is_file():
+        return FileResponse(file_path)
+    return FileResponse(STATIC_DIR / "index.html")
 
 
 def main():

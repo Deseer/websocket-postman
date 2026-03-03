@@ -57,7 +57,7 @@ class CommandParser:
         # 构造正则：^(前缀1|前缀2|...)([:\s]*)([/#]\S+)(.*)$
         # prefix 后面可以接可选的冒号或空格
         prefixes_esc = [re.escape(p) for p in self.command_prefixes]
-        pattern_str = f"^({'|'.join(prefixes_esc)})([:\\\\s]*)([/#]\\\\S+)(.*)$"
+        pattern_str = f"^({'|'.join(prefixes_esc)})([:\\s]*)([/#]\\S+)(.*)$"
         self._combined_pattern = re.compile(pattern_str)
 
     def parse(self, message: str) -> ParsedCommand:
@@ -108,4 +108,4 @@ class CommandParser:
     def is_system_command(self, command: str) -> bool:
         """检查是否为系统内置指令"""
         system_commands = {"/help", "/status", "/list", "/style", "/admin"}
-        return command.split()[0] if command else "" in system_commands
+        return (command.split()[0] if command else "") in system_commands
