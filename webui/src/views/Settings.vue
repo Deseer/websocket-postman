@@ -31,9 +31,8 @@
           </div>
           <div v-if="admins.length === 0" class="empty-tip">暂无管理员</div>
           <div v-for="(admin, index) in admins" :key="index" class="admin-item">
-            <el-input-number
+            <el-input
               v-model="admins[index]"
-              :controls="false"
               placeholder="输入 QQ 号"
               style="width: 200px"
             />
@@ -229,7 +228,7 @@ const fetchConfig = async () => {
       finalForm.value = { ...config.final }
     }
     if (config.admins) {
-      admins.value = [...config.admins]
+      admins.value = config.admins.map(a => String(a))
     }
   } catch (error) {
     console.error('Load config error:', error)
@@ -329,7 +328,7 @@ const toggleRealTime = (value) => {
 
 // 管理员操作
 const addAdmin = () => {
-  admins.value.push(0)
+  admins.value.push('')
 }
 
 const removeAdmin = (index) => {
@@ -345,7 +344,7 @@ const saveConfig = async () => {
       database: databaseForm.value,
       logging: loggingForm.value,
       final: finalForm.value,
-      admins: admins.value.filter(a => a > 0),
+      admins: admins.value.map(a => parseInt(a, 10)).filter(a => a > 0 && !isNaN(a)),
     })
     ElMessage.success('配置保存成功，请重启服务使配置生效')
   } catch (error) {

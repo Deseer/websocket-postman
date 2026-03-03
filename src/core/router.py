@@ -96,9 +96,14 @@ class CommandRouter:
             if cs.is_public:
                 self._public_sets.append(cs)
 
-            # 前缀映射
+            # 前缀映射（显式 prefix 优先）
             if cs.prefix:
                 self._prefix_map[cs.prefix] = cs
+
+            # 自动将指令集名称也注册为前缀（支持 name/指令 或 name:指令 格式）
+            name_lower = cs.name.lower()
+            if name_lower not in self._prefix_map:
+                self._prefix_map[name_lower] = cs
 
             # 分类映射（用于 /style select）
             if cs.category:
