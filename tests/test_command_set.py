@@ -1,14 +1,17 @@
 """指令集匹配行为测试。"""
 
 import pytest
+import asyncio
 from pydantic import ValidationError
 from types import SimpleNamespace
+from unittest.mock import AsyncMock
 
 from src.api.routes.command_sets import get_command_sets
 from src.config import AppConfig, CommandConfig, CommandSetConfig, TimeRestriction
 from src.core.permission import PermissionChecker
 from src.core.parser import ParsedCommand
 from src.core.router import CommandRouter
+from src.core.ws_client import WebSocketConnection
 from src.models.command_set import Command, CommandSet
 from src.models.user import User
 
@@ -164,6 +167,28 @@ def test_command_set_config_rejects_invalid_exclusion_pattern_and_group_marker()
         CommandSetConfig(
             id="bad", name="Bad", target_ws="bot", require_prefix_in_groups=["all"]
         )
+
+
+@pytest.mark.asyncio
+async def test_manual_disconnect_cancels_pending_reconnect():
+    connection = WebSocketConnection(
+        id="bot",
+        name="Bot",
+        url="ws://127.0.0.1:1/ws",
+        reconnect_interval=0.01,
+    )
+    connect_spy = AsyncMock(return_value=True)
+    connection.connect = connect_spy
+
+    connection._schedule_reconnect()
+    await asyncio.sleep(0)
+    await connection.disconnect()
+    await asyncio.sleep(0.02)
+
+    assert connection.enabled is False
+    assert connection._stopped is True
+    assert connection._reconnect_task is None
+    connect_spy.assert_not_awaited()
 
 
 def test_command_set_access_lists_are_enforced(monkeypatch):

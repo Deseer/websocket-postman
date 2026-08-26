@@ -227,6 +227,7 @@ def main() -> None:
                 **connection,
                 "token": connection.get("token", ""),
                 "self_id": args.self_id,
+                "enabled": True,
                 "auto_reconnect": True,
                 "reconnect_interval": 5,
                 "allow_forward": True,

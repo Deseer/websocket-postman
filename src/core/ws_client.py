@@ -20,6 +20,7 @@ class WebSocketConnection:
     url: str
     token: str | None = None  # OneBot v11 认证 Token
     self_id: int | None = None  # OneBot 握手和 lifecycle 的机器人 QQ
+    enabled: bool = True
     auto_reconnect: bool = True
     reconnect_interval: int = 5
     allow_forward: bool = False  # 是否允许此连接主动回推到 NapCat 客户端
@@ -29,6 +30,7 @@ class WebSocketConnection:
     _reconnecting: bool = field(default=False, repr=False)
     _message_handler: Callable | None = field(default=None, repr=False)
     _task: asyncio.Task | None = field(default=None, repr=False)
+    _reconnect_task: asyncio.Task | None = field(default=None, repr=False)
     _stopped: bool = field(default=False, repr=False)  # 用于彻底阻止重连
     _response_queue: asyncio.Queue | None = field(default=None, repr=False)  # 响应队列
 
@@ -38,6 +40,8 @@ class WebSocketConnection:
 
     async def connect(self) -> bool:
         """连接到上游服务"""
+        if not self.enabled or self._stopped:
+            return False
         if self._connected:
             return True
 
@@ -85,15 +89,24 @@ class WebSocketConnection:
             logger.error(f"连接失败: {self.name} - {e}")
             self._connected = False
 
-            if self.auto_reconnect and not self._reconnecting:
-                asyncio.create_task(self._reconnect())
+            self._schedule_reconnect()
 
             return False
 
     async def disconnect(self):
         """断开连接"""
         self._stopped = True  # 设置停止标志，阻止重连
+        self.enabled = False
         self._connected = False
+
+        reconnect_task = self._reconnect_task
+        if reconnect_task and reconnect_task is not asyncio.current_task():
+            reconnect_task.cancel()
+            try:
+                await reconnect_task
+            except asyncio.CancelledError:
+                pass
+        self._reconnect_task = None
         self._reconnecting = False
 
         if self._task:
@@ -105,6 +118,12 @@ class WebSocketConnection:
             self._ws = None
 
         logger.info(f"已断开连接: {self.name}")
+
+    async def start(self) -> bool:
+        """显式启用并连接；与自动重连区分。"""
+        self.enabled = True
+        self._stopped = False
+        return await self.connect()
 
     async def send(self, message: str | dict) -> bool:
         """发送消息"""
@@ -183,8 +202,19 @@ class WebSocketConnection:
             logger.error(f"接收消息失败: {self.name} - {e}")
         finally:
             self._connected = False
-            if self.auto_reconnect and not self._reconnecting and not self._stopped:
-                asyncio.create_task(self._reconnect())
+            self._schedule_reconnect()
+
+    def _schedule_reconnect(self):
+        """确保同一连接最多只有一个自动重连任务。"""
+        if (
+            not self.enabled
+            or not self.auto_reconnect
+            or self._stopped
+            or self._reconnecting
+            or (self._reconnect_task and not self._reconnect_task.done())
+        ):
+            return
+        self._reconnect_task = asyncio.create_task(self._reconnect())
 
     async def _reconnect(self):
         """重连"""
@@ -192,15 +222,23 @@ class WebSocketConnection:
             return
 
         self._reconnecting = True
-
-        while self.auto_reconnect and not self._connected and not self._stopped:
-            logger.info(f"{self.reconnect_interval} 秒后重连: {self.name}")
-            await asyncio.sleep(self.reconnect_interval)
-
-            if await self.connect():
-                break
-
-        self._reconnecting = False
+        try:
+            while (
+                self.enabled
+                and self.auto_reconnect
+                and not self._connected
+                and not self._stopped
+            ):
+                logger.info(f"{self.reconnect_interval} 秒后重连: {self.name}")
+                await asyncio.sleep(self.reconnect_interval)
+                if not self.enabled or self._stopped:
+                    break
+                if await self.connect():
+                    break
+        finally:
+            self._reconnecting = False
+            if self._reconnect_task is asyncio.current_task():
+                self._reconnect_task = None
 
 
 class WebSocketClientManager:
@@ -230,6 +268,7 @@ class WebSocketClientManager:
                 conn_config.url,
                 conn_config.token,
                 conn_config.self_id,
+                conn_config.enabled,
                 conn_config.auto_reconnect,
                 conn_config.reconnect_interval,
                 getattr(conn_config, "allow_forward", False),
@@ -242,6 +281,7 @@ class WebSocketClientManager:
         url: str,
         token: str | None = None,
         self_id: int | None = None,
+        enabled: bool = True,
         auto_reconnect: bool = True,
         reconnect_interval: int = 5,
         allow_forward: bool = False,
@@ -253,6 +293,7 @@ class WebSocketClientManager:
             url=url,
             token=token,
             self_id=self_id,
+            enabled=enabled,
             auto_reconnect=auto_reconnect,
             reconnect_interval=reconnect_interval,
             allow_forward=allow_forward,
@@ -262,7 +303,7 @@ class WebSocketClientManager:
 
     async def connect_all(self):
         """连接所有上游服务"""
-        tasks = [conn.connect() for conn in self._connections.values()]
+        tasks = [conn.start() for conn in self._connections.values() if conn.enabled]
         await asyncio.gather(*tasks, return_exceptions=True)
 
     async def disconnect_all(self):
