@@ -21,6 +21,8 @@ class PermissionResult(Enum):
     TIME_RESTRICTED = "time_restricted"
     PRIVILEGE_REQUIRED = "privilege_required"
     NOT_ALLOWED_TO_SWITCH = "not_allowed_to_switch"
+    COMMAND_SET_USER_RESTRICTED = "command_set_user_restricted"
+    COMMAND_SET_GROUP_RESTRICTED = "command_set_group_restricted"
 
 
 @dataclass
@@ -155,6 +157,49 @@ class PermissionChecker:
             allowed=True,
             reason=PermissionResult.ALLOWED,
         )
+
+    def check_command_set_permission(
+        self,
+        user: User | None,
+        command_set: CommandSet,
+        group_id: int | None = None,
+    ) -> PermissionCheckResult:
+        """应用指令集级用户/群聊黑白名单。"""
+        user_id = user.qq_id if user else 0
+        if self.is_admin(user_id):
+            return PermissionCheckResult(True, PermissionResult.ALLOWED)
+
+        config = get_config()
+        access_lists = {item.id: item for item in config.access_lists}
+
+        def check(list_id: str | None, value: int | None, expected_type: str) -> bool:
+            if not list_id:
+                return True
+            access_list = access_lists.get(list_id)
+            if access_list is None or access_list.type != expected_type:
+                logger.warning(
+                    f"指令集 {command_set.id} 引用了不存在或类型错误的名单 {list_id}"
+                )
+                return False
+            if value is None:
+                return access_list.mode != "whitelist"
+            contains = value in access_list.items
+            return contains if access_list.mode == "whitelist" else not contains
+
+        if not check(command_set.user_access_list, user_id, "user"):
+            return PermissionCheckResult(
+                False,
+                PermissionResult.COMMAND_SET_USER_RESTRICTED,
+                "你没有使用此指令集的权限",
+            )
+        if not check(command_set.group_access_list, group_id, "group"):
+            return PermissionCheckResult(
+                False,
+                PermissionResult.COMMAND_SET_GROUP_RESTRICTED,
+                "此指令集不允许在当前会话使用",
+            )
+
+        return PermissionCheckResult(True, PermissionResult.ALLOWED)
 
     def check_style_switch_permission(
         self,

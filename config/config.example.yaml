@@ -42,6 +42,8 @@ command_sets:
     is_public: true
     strip_prefix: true  # 转发时去掉指令前缀
     is_default: true  # 该分类的默认指令集
+    require_prefix_in_groups: ["@any"]  # 所有群聊必须显式使用该指令集前缀；也可填写具体群号
+    exclude_patterns: ['^/(?:gall|画廊)(?:\s|$)']  # 命中后跳过本指令集
     commands:
       - name: /个人信息
         aliases: [/info, /查询]
@@ -49,6 +51,18 @@ command_sets:
       - name: /抽卡
         is_privileged: true  # 需要特权才能使用
         description: 模拟抽卡
+
+  # 反向模式：除排除规则外，其余消息都转发到指定连接
+  - id: fallback-bot
+    name: FallbackBot
+    target_ws: mybot
+    inverse_mode: true
+    priority: 0
+    enabled: false  # 示例默认关闭，确认规则后再启用
+    commands:
+      - name: '^/(shutdown|debug)(?:\s|$)'
+        is_regex: true
+        description: 不转发敏感指令
 
 # 黑白名单配置
 access_lists: []

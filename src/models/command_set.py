@@ -42,12 +42,27 @@ class Command:
 
     name: str
     aliases: list[str] = field(default_factory=list)
+    is_regex: bool = False
     description: str = ""
     is_privileged: bool = False
     time_restriction: TimeRange | None = None
     group_restriction: list[int] = field(default_factory=list)
     user_whitelist: list[int | str] = field(default_factory=list)
     user_blacklist: list[int | str] = field(default_factory=list)
+    is_passthrough: bool = False
+    _compiled_regexes: dict[str, re.Pattern[str]] = field(
+        default_factory=dict, init=False, repr=False
+    )
+
+    def __post_init__(self):
+        if self.is_regex:
+            self._compiled_regexes = {
+                matcher: re.compile(matcher) for matcher in [self.name, *self.aliases]
+            }
+
+    def match_regex(self, matcher: str, text: str) -> re.Match[str] | None:
+        """使用预编译正则从消息开头匹配。"""
+        return self._compiled_regexes[matcher].match(text)
 
     @classmethod
     def from_config(cls, config: dict[str, Any]) -> "Command":
@@ -55,6 +70,7 @@ class Command:
         return cls(
             name=config["name"],
             aliases=config.get("aliases", []),
+            is_regex=config.get("is_regex", False),
             description=config.get("description", ""),
             is_privileged=config.get("is_privileged", False),
             time_restriction=TimeRange.from_config(config.get("time_restriction")),
@@ -65,6 +81,11 @@ class Command:
 
     def matches(self, cmd_name: str) -> bool:
         """检查指令名是否匹配"""
+        if self.is_regex:
+            return any(
+                self.match_regex(pattern, cmd_name)
+                for pattern in [self.name, *self.aliases]
+            )
         if cmd_name == self.name:
             return True
         return cmd_name in self.aliases
@@ -84,7 +105,21 @@ class CommandSet:
     priority: int = 0
     strip_prefix: bool = False
     is_default: bool = False
+    enabled: bool = True
+    user_access_list: str | None = None
+    group_access_list: str | None = None
+    inverse_mode: bool = False
+    require_prefix_in_groups: list[int | str] = field(default_factory=list)
+    exclude_patterns: list[str] = field(default_factory=list)
     commands: list[Command] = field(default_factory=list)
+    _compiled_exclude_patterns: list[re.Pattern[str]] = field(
+        default_factory=list, init=False, repr=False
+    )
+
+    def __post_init__(self):
+        self._compiled_exclude_patterns = [
+            re.compile(pattern) for pattern in self.exclude_patterns
+        ]
 
     @classmethod
     def from_config(cls, config: dict[str, Any]) -> "CommandSet":
@@ -102,8 +137,20 @@ class CommandSet:
             priority=config.get("priority", 0),
             strip_prefix=config.get("strip_prefix", False),
             is_default=config.get("is_default", False),
+            enabled=config.get("enabled", True),
+            user_access_list=config.get("user_access_list"),
+            group_access_list=config.get("group_access_list"),
+            inverse_mode=config.get("inverse_mode", False),
+            require_prefix_in_groups=config.get("require_prefix_in_groups", []),
+            exclude_patterns=config.get("exclude_patterns", []),
             commands=commands,
         )
+
+    def requires_prefix(self, group_id: int | None) -> bool:
+        """群聊是否必须显式使用该指令集前缀；私聊不受影响。"""
+        if group_id is None:
+            return False
+        return "@any" in self.require_prefix_in_groups or group_id in self.require_prefix_in_groups
 
     def find_command(self, cmd_name: str) -> Command | None:
         """查找指令"""
@@ -201,6 +248,25 @@ class CommandSet:
         if not text:
             return None
 
+        if any(pattern.match(text) for pattern in self._compiled_exclude_patterns):
+            return None
+
+        if self.inverse_mode:
+            # 反向模式中 commands 是排除规则；未命中的消息原样透传。
+            for cmd in self.commands:
+                if cmd.is_regex:
+                    if any(
+                        cmd.match_regex(pattern, text)
+                        for pattern in [cmd.name, *cmd.aliases]
+                    ):
+                        return None
+                    continue
+                if any(text.startswith(matcher) for matcher in [cmd.name, *cmd.aliases]):
+                    return None
+
+            passthrough = Command(name=text, is_passthrough=True)
+            return passthrough, "", text
+
         # 收集所有可能的匹配项（名称和别名）
         all_matchers: list[tuple[str, Command]] = []
         for cmd in self.commands:
@@ -212,6 +278,14 @@ class CommandSet:
         all_matchers.sort(key=lambda x: len(x[0]), reverse=True)
 
         for name, cmd in all_matchers:
+            if cmd.is_regex:
+                match = cmd.match_regex(name, text)
+                if not match:
+                    continue
+                matched_text = match.group(0)
+                args = text[match.end() :].strip()
+                return cmd, args, matched_text
+
             if "@any" in name or "@self" in name:
                 match_len = self._match_with_placeholders(name, text, self_id=self_id)
                 if match_len is None:
@@ -241,6 +315,7 @@ class Category:
     allow_user_switch: bool = True  # 是否允许用户切换此分类下的指令集
     default_command_set: str | None = None  # 默认使用的指令集ID
     is_mutex: bool = True  # 此分类下的指令集是否互斥
+    enabled: bool = True
 
     @classmethod
     def from_config(cls, config: dict[str, Any]) -> "Category":
@@ -255,4 +330,5 @@ class Category:
             allow_user_switch=config.get("allow_user_switch", True),
             default_command_set=config.get("default_command_set"),
             is_mutex=config.get("is_mutex", True),
+            enabled=config.get("enabled", True),
         )

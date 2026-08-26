@@ -1,14 +1,32 @@
 """配置加载模块"""
 
 import os
+import re
 from pathlib import Path
 from typing import Any
 
 import yaml
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 from pydantic_settings import BaseSettings
 
 from src.utils.logger import logger
+
+
+def validate_command_matchers(name: str, aliases: list[str], is_regex: bool) -> None:
+    """校验指令名/别名；正向和反向规则共用同一套约束。"""
+    matchers = [name, *aliases]
+    if any(not matcher for matcher in matchers):
+        raise ValueError("指令名和别名不能为空")
+    if not is_regex:
+        return
+
+    for matcher in matchers:
+        try:
+            compiled = re.compile(matcher)
+        except re.error as exc:
+            raise ValueError(f"无效的指令正则 {matcher!r}: {exc}") from exc
+        if compiled.match(""):
+            raise ValueError(f"指令正则不能匹配空字符串: {matcher!r}")
 
 
 class TimeRestriction(BaseModel):
@@ -23,12 +41,19 @@ class CommandConfig(BaseModel):
 
     name: str
     aliases: list[str] = Field(default_factory=list)
+    is_regex: bool = False
     description: str = ""
     is_privileged: bool = False
     time_restriction: TimeRestriction | None = None
     group_restriction: list[int] = Field(default_factory=list)
     user_whitelist: list[int | str] = Field(default_factory=list)
     user_blacklist: list[int | str] = Field(default_factory=list)
+
+    @model_validator(mode="after")
+    def validate_matchers(self):
+        """在加载配置时尽早拒绝空指令和无效正则。"""
+        validate_command_matchers(self.name, self.aliases, self.is_regex)
+        return self
 
 
 class CommandSetConfig(BaseModel):
@@ -47,7 +72,32 @@ class CommandSetConfig(BaseModel):
     user_access_list: str | None = None  # 用户黑白名单 ID
     group_access_list: str | None = None  # 群聊黑白名单 ID
     is_default: bool = False  # 是否为分类默认指令集
+    inverse_mode: bool = False  # 反向模式：转发未被 commands 命中的消息
+    require_prefix_in_groups: list[int | str] = Field(default_factory=list)
+    exclude_patterns: list[str] = Field(default_factory=list)
     commands: list[CommandConfig] = Field(default_factory=list)
+
+    @model_validator(mode="after")
+    def validate_routing_rules(self):
+        """校验群聊前缀范围和指令集级排除正则。"""
+        invalid_groups = [
+            item
+            for item in self.require_prefix_in_groups
+            if not isinstance(item, int) and item != "@any"
+        ]
+        if invalid_groups:
+            raise ValueError("强制前缀群聊仅支持群号或 @any")
+
+        for pattern in self.exclude_patterns:
+            if not pattern:
+                raise ValueError("排除正则不能为空")
+            try:
+                compiled = re.compile(pattern)
+            except re.error as exc:
+                raise ValueError(f"无效的排除正则 {pattern!r}: {exc}") from exc
+            if compiled.match(""):
+                raise ValueError(f"排除正则不能匹配空字符串: {pattern!r}")
+        return self
 
 
 class CategoryConfig(BaseModel):
@@ -82,6 +132,7 @@ class ConnectionConfig(BaseModel):
     name: str
     url: str
     token: str | None = None  # OneBot v11 认证 Token
+    self_id: int | None = None  # 上游 OneBot 握手使用的机器人 QQ
     auto_reconnect: bool = True
     reconnect_interval: int = 5
     allow_forward: bool = False  # 是否允许此连接主动发起消息并转发

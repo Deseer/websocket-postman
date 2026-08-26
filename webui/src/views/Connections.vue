@@ -87,6 +87,10 @@
           <el-input v-model="form.token" placeholder="OneBot v11 认证 Token（可选）" show-password />
           <div class="form-tip">如果服务需要认证，请填写 Token</div>
         </el-form-item>
+        <el-form-item label="机器人 QQ">
+          <el-input-number v-model="form.self_id" :min="1" :controls="false" style="width: 100%" />
+          <div class="form-tip">用于 OneBot 的 X-Self-ID 握手头（可选）</div>
+        </el-form-item>
         <el-form-item label="自动重连">
           <el-switch v-model="form.auto_reconnect" />
         </el-form-item>
@@ -126,6 +130,7 @@ const form = ref({
   name: '',
   url: '',
   token: '',
+  self_id: null,
   auto_reconnect: true,
   reconnect_interval: 5,
   allow_forward: false,
@@ -164,6 +169,7 @@ const showCreateDialog = () => {
     name: '',
     url: '',
     token: '',
+    self_id: null,
     auto_reconnect: true,
     reconnect_interval: 5,
     allow_forward: false,

@@ -1,13 +1,11 @@
-version: '3.8'
-
 services:
   ws-dispatcher:
     build: .
     container_name: ws-dispatcher
     restart: unless-stopped
     ports:
-      - "7200:8080" # WebUI
-      - "8765:8765" # NapCat WS 连接端口
+      - "${POSTMAN_WEBUI_PORT:-7200}:8080" # WebUI
+      - "${POSTMAN_WS_PORT:-8766}:8765" # NapCat WS 连接端口（避开 Tavern OneBot 的 8765）
     volumes:
       # 持久化配置和数据
       - ./config:/app/config
@@ -19,7 +17,7 @@ services:
     environment:
       - TZ=Asia/Shanghai
     healthcheck:
-      test: [ "CMD", "curl", "-f", "http://localhost:8080/api/health" ]
+      test: [ "CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8080/api/health', timeout=5)" ]
       interval: 30s
       timeout: 10s
       retries: 3

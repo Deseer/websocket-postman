@@ -101,11 +101,26 @@ command_sets:
     category: pjsk
     target_ws: mybot
     is_public: true
+    prefix: bot1
+    require_prefix_in_groups: ["@any"]  # 所有群聊必须使用 bot1 前缀，私聊不受影响
+    exclude_patterns: ['^/(?:gall|画廊)(?:\s|$)']  # 冲突指令不路由到本 Bot
     commands:
       - name: /个人信息
         aliases: [/info, /查询]
       - name: /抽卡
         is_privileged: true  # 特权指令
+
+  # 反向指令集：匹配除排除规则之外的所有消息
+  - id: fallback
+    name: Fallback
+    target_ws: mybot
+    inverse_mode: true
+    priority: 0
+    commands:
+      - name: '^/(shutdown|debug)(?:\s|$)'
+        is_regex: true
+
+`require_prefix_in_groups` 支持具体群号和 `@any`；`exclude_patterns` 是指令集级正则黑名单，在正向/反向匹配前生效。可运行 `scripts/sync_local_bot_config.py` 从本机 ArkBot、Mizuki 和 Haruki 源码刷新三套指令与别名。
 
 # 默认规则
 final:
@@ -113,6 +128,10 @@ final:
   message: 未知指令
   send_message: true  # 是否发送拒绝消息
 ```
+
+反向模式中的 `commands` 表示排除规则：普通规则按消息开头匹配；设置
+`is_regex: true` 后按 Python 正则从消息开头匹配。正向模式也支持正则指令。
+无效正则和能匹配空字符串的正则会在保存配置时被拒绝。
 
 ## 📱 用户指令
 

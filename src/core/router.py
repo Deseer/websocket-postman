@@ -92,6 +92,8 @@ class CommandRouter:
         self._name_to_set = {}  # command_set name -> command_set
 
         for cs in self._command_sets:
+            if not cs.enabled:
+                continue
             # 公共指令集
             if cs.is_public:
                 self._public_sets.append(cs)
@@ -116,9 +118,9 @@ class CommandRouter:
 
         # 从指令集的 is_default 设置分类的默认指令集
         for cs in self._command_sets:
-            if cs.is_default and cs.category:
+            if cs.enabled and cs.is_default and cs.category:
                 cat = next((c for c in self._categories if c.id == cs.category), None)
-                if cat and not cat.default_command_set:
+                if cat and cat.enabled and not cat.default_command_set:
                     cat.default_command_set = cs.id
 
     async def get_or_create_user(self, qq_id: int, nickname: str = "") -> User:
@@ -210,6 +212,7 @@ class CommandRouter:
         command_set, command, corrected_args, matched_command_text = await self._find_command(
             parsed,
             user,
+            group_id=group_id,
             self_id=self_id,
             raw_message=message.strip(),
         )
@@ -221,7 +224,16 @@ class CommandRouter:
         # 记录修正后的参数
         final_args = corrected_args if corrected_args is not None else parsed.args
 
-        # 检查权限
+        # 检查指令集级和指令级权限
+        command_set_permission = self._permission_checker.check_command_set_permission(
+            user, command_set, group_id
+        )
+        if not command_set_permission.allowed:
+            return RouteResult(
+                success=False,
+                error_message=command_set_permission.message,
+            )
+
         permission_result = self._permission_checker.check_command_permission(
             user, command, group_id, self_id=self_id
         )
@@ -233,7 +245,7 @@ class CommandRouter:
             )
 
         # 构建转发消息：若配置命令本身含占位符，则使用用户实际匹配文本
-        if "@any" in command.name or "@self" in command.name:
+        if command.is_regex or command.is_passthrough or "@any" in command.name or "@self" in command.name:
             command_text = matched_command_text or command.name
         else:
             command_text = command.name
@@ -282,6 +294,7 @@ class CommandRouter:
         self,
         parsed: ParsedCommand,
         user: User,
+        group_id: int | None = None,
         self_id: int = 0,
         raw_message: str | None = None,
     ) -> tuple[CommandSet | None, Command | None, str | None, str | None]:
@@ -300,7 +313,7 @@ class CommandRouter:
         # 如果有前缀，优先在对应指令集中通过「最长匹配」查找
         if parsed.prefix:
             cs = self._prefix_map.get(parsed.prefix)
-            if cs:
+            if cs and cs.enabled:
                 for candidate_text in candidate_texts:
                     match = cs.find_match(candidate_text, self_id=self_id)
                     if match:
@@ -317,6 +330,10 @@ class CommandRouter:
 
         # 查找所有匹配的指令集，并应用互斥过滤
         for cs in self._command_sets:
+            if not cs.enabled:
+                continue
+            if not parsed.prefix and cs.requires_prefix(group_id):
+                continue
             match = None
             for candidate_text in candidate_texts:
                 match = cs.find_match(candidate_text, self_id=self_id)
@@ -333,6 +350,8 @@ class CommandRouter:
                 category = next(
                     (c for c in self._categories if c.id == cs.category), None
                 )
+                if category and not category.enabled:
+                    continue
                 if category and category.is_mutex:
                     # 获取该分类下已选或默认风格
                     selected_style_id = (user.selected_styles or {}).get(cs.category)
@@ -358,14 +377,14 @@ class CommandRouter:
         # - 公共指令集次之
 
         def score_match(match: tuple[CommandSet, Command, str, str]):
-            cs, cmd, _, _ = match
+            cs, cmd, _, matched_command_text = match
             score = 0
 
             # 基础分：优先级
             score += cs.priority * 10
 
             # 长度分：匹配到的指令越长，分数越高（最长匹配原则）
-            score += len(cmd.name)
+            score += len(matched_command_text)
 
             # 是否在用户选择的分类风格中
             if cs.category:
@@ -433,6 +452,13 @@ class CommandRouter:
         if not target_cs:
             return None
 
+        if not target_cs.enabled:
+            return RouteResult(
+                success=False,
+                error_message=f"指令集 {target_cs.name} 已禁用",
+                is_system_command=True,
+            )
+
         # 查找指令（支持 @self/@any 占位符）
         command_candidates = [actual_command]
         if at_prefix:
@@ -455,7 +481,16 @@ class CommandRouter:
 
         cmd, args, matched_command_text = match
 
-        # 检查权限
+        # 检查指令集级和指令级权限
+        command_set_permission = self._permission_checker.check_command_set_permission(
+            user, target_cs, group_id
+        )
+        if not command_set_permission.allowed:
+            return RouteResult(
+                success=False,
+                error_message=command_set_permission.message,
+            )
+
         permission_result = self._permission_checker.check_command_permission(
             user, cmd, group_id, self_id=self_id
         )
@@ -467,7 +502,7 @@ class CommandRouter:
             )
 
         # 构建转发的消息内容
-        if "@any" in cmd.name or "@self" in cmd.name:
+        if cmd.is_regex or cmd.is_passthrough or "@any" in cmd.name or "@self" in cmd.name:
             command_text = matched_command_text or cmd.name
         else:
             command_text = cmd.name
@@ -567,6 +602,8 @@ class CommandRouter:
             # 列出所有分类
             lines = ["📂 可用分类：", ""]
             for cat in sorted(self._categories, key=lambda c: c.order):
+                if not cat.enabled:
+                    continue
                 lines.append(f"  【{cat.display_name}】")
                 lines.append(f"    /list {cat.display_name}")
 
@@ -632,6 +669,8 @@ class CommandRouter:
             lines = ["🎨 可选风格：", ""]
 
             for cat in self._categories:
+                if not cat.enabled:
+                    continue
                 sets = self._group_sets.get(cat.id, [])
                 if not sets:
                     continue

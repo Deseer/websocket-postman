@@ -124,8 +124,8 @@ async def update_category(category_id: str, data: CategoryUpdate):
         target_category.enabled = data.enabled
     if data.allow_user_switch is not None:
         target_category.allow_user_switch = data.allow_user_switch
-    if data.default_command_set is not None:
-        target_category.default_command_set = data.default_command_set
+    if "default_command_set" in data.model_fields_set:
+        target_category.default_command_set = data.default_command_set or None
     if data.is_mutex is not None:
         target_category.is_mutex = data.is_mutex
     
