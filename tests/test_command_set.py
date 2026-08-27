@@ -17,11 +17,16 @@ from src.models.command_set import Category
 from src.models.user import User
 from scripts.migrate_stable_ids import migrate_selected_styles
 from scripts.sync_local_bot_config import (
+    ARKBOT_COMMAND_GROUPS,
     haruki_command_pattern,
     haruki_command_records,
     migrate_stable_ids,
     prefix_collision_exclusion_patterns,
 )
+
+
+def test_arkbot_stage_command_aliases_are_configured():
+    assert ["/关卡", "/地图"] in ARKBOT_COMMAND_GROUPS
 
 
 def test_forward_mode_keeps_literal_longest_prefix_matching():
