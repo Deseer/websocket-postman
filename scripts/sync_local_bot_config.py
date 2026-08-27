@@ -166,6 +166,26 @@ def command_records(groups: list[list[str]]) -> list[dict]:
     ]
 
 
+def prefix_collision_exclusion_patterns(
+    own_groups: list[list[str]], other_groups: list[list[str]]
+) -> list[str]:
+    """阻止本指令集的短字面指令抢占其他指令集的长指令。"""
+    own_commands = {item for group in own_groups for item in group}
+    other_commands = {item for group in other_groups for item in group}
+    collisions = sorted(
+        {
+            other
+            for own in own_commands
+            for other in other_commands
+            if other != own and other.startswith(own)
+        },
+        key=lambda item: (-len(item), item),
+    )
+    if not collisions:
+        return []
+    return [r"^(?:" + "|".join(re.escape(item) for item in collisions) + ")"]
+
+
 def upsert_connection(config: dict, connection: dict) -> None:
     connections = config.setdefault("connections", [])
     existing = next((item for item in connections if item["id"] == connection["id"]), None)
@@ -239,6 +259,7 @@ def main() -> None:
         r"待审核画廊(?:\s|$)|画廊(?:待审核|审核通过|审核拒绝|群名单)(?:\s|$)|"
         r"下载(?:图包|看|画廊)(?:\s|$)|同步(?:图床|画廊图床)(?:\s|$))"
     )
+    mizuki_collision_exclusions = prefix_collision_exclusion_patterns(mizuki, haruki)
     upsert_command_set(
         config,
         {
@@ -250,7 +271,8 @@ def main() -> None:
             "is_public": True,
             "target_ws": "hrkbot-8kmo",
             "priority": 100,
-            "strip_prefix": True,
+            # Postman 的 hrk 路由前缀由路由器消费；Haruki 原生 / 指令必须原样保留。
+            "strip_prefix": False,
             "enabled": True,
             "is_default": True,
             "exclude_patterns": [gallery_exclusion],
@@ -269,6 +291,7 @@ def main() -> None:
             "priority": 200,
             "strip_prefix": False,
             "enabled": True,
+            "exclude_patterns": mizuki_collision_exclusions,
             "commands": command_records(mizuki),
         },
     )

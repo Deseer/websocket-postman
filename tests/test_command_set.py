@@ -14,6 +14,7 @@ from src.core.router import CommandRouter
 from src.core.ws_client import WebSocketConnection
 from src.models.command_set import Command, CommandSet
 from src.models.user import User
+from scripts.sync_local_bot_config import prefix_collision_exclusion_patterns
 
 
 def test_forward_mode_keeps_literal_longest_prefix_matching():
@@ -42,6 +43,37 @@ def test_forward_mode_supports_regex_and_preserves_matched_text():
     assert command.is_regex is True
     assert matched == "/ping 42"
     assert args == "extra"
+
+
+def test_positive_commands_and_negative_exclusions_apply_together():
+    command_set = CommandSet(
+        id="mizuki",
+        name="Mizuki",
+        commands=[Command(name="/添加"), Command(name="/上传")],
+        exclude_patterns=[r"^/(?:添加歌曲别名|上传个人信息)"],
+    )
+
+    assert command_set.find_match("/添加 大肥鱼")[0].name == "/添加"
+    assert command_set.find_match("/上传 大肥鱼")[0].name == "/上传"
+    assert command_set.find_match("/添加歌曲别名 花里=花里实乃理") is None
+    assert command_set.find_match("/上传个人信息图片") is None
+
+
+def test_cross_set_prefix_collisions_generate_exact_negative_rules():
+    patterns = prefix_collision_exclusion_patterns(
+        [["/添加"], ["/上传"]],
+        [["/添加歌曲别名"], ["/添加角色别名"], ["/查询"]],
+    )
+    command_set = CommandSet(
+        id="mizuki",
+        name="Mizuki",
+        commands=[Command(name="/添加"), Command(name="/上传")],
+        exclude_patterns=patterns,
+    )
+
+    assert command_set.find_match("/添加 gallery") is not None
+    assert command_set.find_match("/添加歌曲别名foo") is None
+    assert command_set.find_match("/添加角色别名 foo") is None
 
 
 def test_inverse_mode_passes_unmatched_message_through_unchanged():

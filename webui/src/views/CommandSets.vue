@@ -327,6 +327,9 @@
             </el-form-item>
 
             <el-form-item label="排除正则">
+              <div class="form-tip">
+                与上方正向指令同时生效，且排除优先；可用于阻止短指令抢占其他 Bot 的长指令。
+              </div>
               <el-input
                 v-model="commandSetForm.excludePatternsText"
                 type="textarea"
