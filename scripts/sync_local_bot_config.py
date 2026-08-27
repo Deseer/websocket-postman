@@ -14,6 +14,22 @@ import yaml
 
 GO_STRING = re.compile(r'"(?:\\.|[^"\\])*"')
 
+CONNECTION_ID_MIGRATIONS = {
+    "8823-4uqw": "8823",
+    "hrkbot-8kmo": "hrkbot",
+    "mzkbot-local": "mzkbot",
+    "arkbot-local": "arkbot",
+    "sakurabot-6qgi": "sakurabot",
+}
+COMMAND_SET_ID_MIGRATIONS = {
+    "hrkbot-339v": "hrkbot",
+    "sakurabot-40j2": "sakurabot",
+    "8823-tzcm": "8823",
+    "mzkbot-local": "mzkbot",
+    "arkbot-local": "arkbot",
+}
+CATEGORY_ID_MIGRATIONS = {"pjsk-2vd6": "pjsk"}
+
 
 def go_strings(text: str) -> list[str]:
     return [json.loads(item) for item in GO_STRING.findall(text)]
@@ -205,6 +221,40 @@ def upsert_command_set(config: dict, command_set: dict) -> None:
         command_sets.append(command_set)
 
 
+def migrate_stable_ids(config: dict) -> None:
+    """将旧的随机后缀 ID 迁移为可读且稳定的语义 ID。"""
+    for connection in config.get("connections", []):
+        connection["id"] = CONNECTION_ID_MIGRATIONS.get(
+            connection["id"], connection["id"]
+        )
+
+    for category in config.get("categories", []):
+        old_id = category["id"]
+        category["id"] = CATEGORY_ID_MIGRATIONS.get(old_id, old_id)
+        if category.get("name") == old_id:
+            category["name"] = category["id"]
+        default_id = category.get("default_command_set")
+        if default_id:
+            category["default_command_set"] = COMMAND_SET_ID_MIGRATIONS.get(
+                default_id, default_id
+            )
+
+    for command_set in config.get("command_sets", []):
+        command_set["id"] = COMMAND_SET_ID_MIGRATIONS.get(
+            command_set["id"], command_set["id"]
+        )
+        category_id = command_set.get("category")
+        if category_id:
+            command_set["category"] = CATEGORY_ID_MIGRATIONS.get(
+                category_id, category_id
+            )
+        target_ws = command_set.get("target_ws")
+        if target_ws:
+            command_set["target_ws"] = CONNECTION_ID_MIGRATIONS.get(
+                target_ws, target_ws
+            )
+
+
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--config", type=Path, default=Path("config/config.yaml"))
@@ -215,6 +265,7 @@ def main() -> None:
     args = parser.parse_args()
 
     config = yaml.safe_load(args.config.read_text())
+    migrate_stable_ids(config)
     haruki = haruki_commands(args.haruki_cloud, args.haruki_client)
     mizuki = mizuki_commands(args.mizuki)
 
@@ -232,14 +283,14 @@ def main() -> None:
                 break
 
     for connection in (
-        {"id": "hrkbot-8kmo", "name": "hrkbot", "url": "ws://host.docker.internal:8000/ws"},
+        {"id": "hrkbot", "name": "hrkbot", "url": "ws://host.docker.internal:8000/ws"},
         {
-            "id": "mzkbot-local",
+            "id": "mzkbot",
             "name": "mzkbot",
             "url": "ws://host.docker.internal:8088/onebot/v11/",
             "token": mizuki_token,
         },
-        {"id": "arkbot-local", "name": "arkbot", "url": "ws://host.docker.internal:8788/onebot/v11/ws"},
+        {"id": "arkbot", "name": "arkbot", "url": "ws://host.docker.internal:8788/onebot/v11/ws"},
     ):
         upsert_connection(
             config,
@@ -263,13 +314,13 @@ def main() -> None:
     upsert_command_set(
         config,
         {
-            "id": "hrkbot-339v",
+            "id": "hrkbot",
             "name": "hrkbot",
             "prefix": "hrk",
-            "category": "pjsk-2vd6",
+            "category": "pjsk",
             "description": "Haruki Client 本地完整指令清单",
             "is_public": True,
-            "target_ws": "hrkbot-8kmo",
+            "target_ws": "hrkbot",
             "priority": 100,
             # Postman 的 hrk 路由前缀由路由器消费；Haruki 原生 / 指令必须原样保留。
             "strip_prefix": False,
@@ -282,12 +333,12 @@ def main() -> None:
     upsert_command_set(
         config,
         {
-            "id": "mzkbot-local",
+            "id": "mzkbot",
             "name": "mzkbot",
             "prefix": "mzk",
             "description": "Mizuki 画廊及本地零散指令",
             "is_public": True,
-            "target_ws": "mzkbot-local",
+            "target_ws": "mzkbot",
             "priority": 200,
             "strip_prefix": False,
             "enabled": True,
@@ -298,12 +349,12 @@ def main() -> None:
     upsert_command_set(
         config,
         {
-            "id": "arkbot-local",
+            "id": "arkbot",
             "name": "arkbot",
             "prefix": "ark",
             "description": "ArkBot；所有群聊必须使用 ark 前缀",
             "is_public": True,
-            "target_ws": "arkbot-local",
+            "target_ws": "arkbot",
             "priority": 150,
             "strip_prefix": False,
             "enabled": True,

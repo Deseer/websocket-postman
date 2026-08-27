@@ -184,7 +184,7 @@ const loggingForm = ref({
 const finalForm = ref({
   action: 'reject',
   target_ws: '',
-  message: '未知指令，请使用 /help 查看帮助',
+  message: '未知指令，请使用 pm/help 查看 Postman 帮助',
   send_message: true,
 })
 

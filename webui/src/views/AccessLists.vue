@@ -110,6 +110,7 @@
 import { ref, computed, onMounted } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { accessListApi } from '../api'
+import { generateStableId } from '../utils/id'
 
 const accessLists = ref([])
 const loading = ref(false)
@@ -129,14 +130,6 @@ const form = ref({
 // 分类显示
 const userLists = computed(() => accessLists.value.filter(al => al.type === 'user'))
 const groupLists = computed(() => accessLists.value.filter(al => al.type === 'group'))
-
-const generateId = (name) => {
-  const base = name
-    ? name.toLowerCase().replace(/[^a-z0-9\u4e00-\u9fa5]/g, '-').replace(/-+/g, '-').slice(0, 20)
-    : ''
-  const suffix = Date.now().toString(36).slice(-4)
-  return base ? `${base}-${suffix}` : `list-${suffix}`
-}
 
 const fetchData = async () => {
   loading.value = true
@@ -193,7 +186,7 @@ const handleSubmit = async () => {
       })
       ElMessage.success('更新成功')
     } else {
-      const id = generateId(form.value.name)
+      const id = generateStableId(form.value.name, 'access-list')
       await accessListApi.create({
         id,
         name: form.value.name,
