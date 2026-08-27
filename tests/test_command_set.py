@@ -17,6 +17,8 @@ from src.models.command_set import Category
 from src.models.user import User
 from scripts.migrate_stable_ids import migrate_selected_styles
 from scripts.sync_local_bot_config import (
+    haruki_command_pattern,
+    haruki_command_records,
     migrate_stable_ids,
     prefix_collision_exclusion_patterns,
 )
@@ -48,6 +50,65 @@ def test_forward_mode_supports_regex_and_preserves_matched_text():
     assert command.is_regex is True
     assert matched == "/ping 42"
     assert args == "extra"
+
+
+def test_forward_mode_chooses_longest_actual_regex_match():
+    command_set = CommandSet(
+        id="regex",
+        name="Regex",
+        commands=[
+            Command(name=r"^/添", aliases=[r"^/添加"], is_regex=True),
+            Command(name=r"^/添加歌曲别名", is_regex=True),
+        ],
+    )
+
+    command, args, matched = command_set.find_match("/添加歌曲别名 花里=花里实乃理")
+
+    assert command.name == r"^/添加歌曲别名"
+    assert matched == "/添加歌曲别名"
+    assert args == "花里=花里实乃理"
+
+
+@pytest.mark.parametrize(
+    ("text", "matched", "args"),
+    [
+        ("/个人信息", "/个人信息", ""),
+        ("/jp个人信息", "/jp个人信息", ""),
+        ("/jp/个人信息", "/jp/个人信息", ""),
+        ("/jp 个人信息", "/jp 个人信息", ""),
+        ("jp/个人信息", "jp/个人信息", ""),
+        ("jp /个人信息", "jp /个人信息", ""),
+        ("/cn个人信息 参数", "/cn个人信息", "参数"),
+        ("/PJSk-score 100", "/PJSk-score", "100"),
+    ],
+)
+def test_haruki_regex_supports_server_prefix_and_preserves_arguments(
+    text, matched, args
+):
+    record = haruki_command_records([["/个人信息", "/pjsk score"]])[0]
+    command_set = CommandSet(
+        id="hrkbot",
+        name="HrKBot",
+        commands=[Command.from_config(record)],
+    )
+
+    command, actual_args, actual_matched = command_set.find_match(text)
+
+    assert command.is_regex is True
+    assert actual_matched == matched
+    assert actual_args == args
+
+
+@pytest.mark.parametrize("text", ["/JP个人信息", "jp个人信息", "cn 个人信息"])
+def test_haruki_regex_rejects_forms_client_cannot_strip(text):
+    pattern = haruki_command_pattern(["/个人信息"])
+    command_set = CommandSet(
+        id="hrkbot",
+        name="HrKBot",
+        commands=[Command(name=pattern, is_regex=True)],
+    )
+
+    assert command_set.find_match(text) is None
 
 
 def test_positive_commands_and_negative_exclusions_apply_together():
