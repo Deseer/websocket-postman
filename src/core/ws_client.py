@@ -251,6 +251,7 @@ class WebSocketClientManager:
         if cls._instance is None:
             cls._instance = super().__new__(cls)
             cls._instance._connections = {}
+            cls._instance._message_handler = None
         return cls._instance
 
     @classmethod
@@ -298,6 +299,8 @@ class WebSocketClientManager:
             reconnect_interval=reconnect_interval,
             allow_forward=allow_forward,
         )
+        # 热新增或更新重建的连接也必须继承全局回复处理器。
+        conn.set_message_handler(self._message_handler)
         self._connections[id] = conn
         return conn
 
@@ -336,7 +339,8 @@ class WebSocketClientManager:
         return list(self._connections.values())
 
     def set_message_handler(self, handler: Callable):
-        """为所有连接设置消息处理器"""
+        """为现有及后续新增的连接设置消息处理器。"""
+        self._message_handler = handler
         for conn in self._connections.values():
             conn.set_message_handler(handler)
 
