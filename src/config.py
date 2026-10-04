@@ -133,6 +133,7 @@ class ConnectionConfig(BaseModel):
     url: str
     token: str | None = None  # OneBot v11 认证 Token
     self_id: int | None = None  # 上游 OneBot 握手使用的机器人 QQ
+    enabled: bool = True  # 手动停用后跨重启保持断开
     auto_reconnect: bool = True
     reconnect_interval: int = 5
     allow_forward: bool = False  # 是否允许此连接主动发起消息并转发

@@ -36,7 +36,7 @@
             <span :class="['status-tag', row.connected ? 'connected' : 'disconnected']">
               <el-icon v-if="row.connected"><CircleCheck /></el-icon>
               <el-icon v-else><CircleClose /></el-icon>
-              {{ row.connected ? '已连接' : '未连接' }}
+              {{ row.connected ? '已连接' : (row.enabled ? '重连中' : '已停用') }}
             </span>
           </template>
         </el-table-column>
@@ -131,6 +131,7 @@ const form = ref({
   url: '',
   token: '',
   self_id: null,
+  enabled: true,
   auto_reconnect: true,
   reconnect_interval: 5,
   allow_forward: false,
@@ -170,6 +171,7 @@ const showCreateDialog = () => {
     url: '',
     token: '',
     self_id: null,
+    enabled: true,
     auto_reconnect: true,
     reconnect_interval: 5,
     allow_forward: false,

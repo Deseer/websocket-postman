@@ -17,6 +17,7 @@ class ConnectionCreate(BaseModel):
     url: str
     token: str | None = None  # OneBot v11 认证 Token
     self_id: int | None = None
+    enabled: bool = True
     auto_reconnect: bool = True
     reconnect_interval: int = 5
     allow_forward: bool = False
@@ -29,6 +30,7 @@ class ConnectionUpdate(BaseModel):
     url: str | None = None
     token: str | None = None
     self_id: int | None = None
+    enabled: bool | None = None
     auto_reconnect: bool | None = None
     reconnect_interval: int | None = None
     allow_forward: bool | None = None
@@ -54,6 +56,7 @@ async def get_connections():
                 "reconnect_interval": conn_config.reconnect_interval,
                 "allow_forward": getattr(conn_config, "allow_forward", False),
                 "self_id": getattr(conn_config, "self_id", None),
+                "enabled": getattr(conn_config, "enabled", True),
                 "connected": conn_status.get("connected", False),
             }
         )
@@ -78,6 +81,7 @@ async def create_connection(data: ConnectionCreate):
         url=data.url,
         token=data.token,
         self_id=data.self_id,
+        enabled=data.enabled,
         auto_reconnect=data.auto_reconnect,
         reconnect_interval=data.reconnect_interval,
         allow_forward=data.allow_forward,
@@ -95,11 +99,13 @@ async def create_connection(data: ConnectionCreate):
         url=data.url,
         token=data.token,
         self_id=data.self_id,
+        enabled=data.enabled,
         auto_reconnect=data.auto_reconnect,
         reconnect_interval=data.reconnect_interval,
         allow_forward=data.allow_forward,
     )
-    await conn.connect()
+    if data.enabled:
+        await conn.start()
 
     return {"message": "连接创建成功", "id": data.id}
 
@@ -128,6 +134,8 @@ async def update_connection(connection_id: str, data: ConnectionUpdate):
         target_conn.token = data.token
     if "self_id" in data.model_fields_set:
         target_conn.self_id = data.self_id
+    if data.enabled is not None:
+        target_conn.enabled = data.enabled
     if data.auto_reconnect is not None:
         target_conn.auto_reconnect = data.auto_reconnect
     if data.reconnect_interval is not None:
@@ -153,12 +161,13 @@ async def update_connection(connection_id: str, data: ConnectionUpdate):
         url=target_conn.url,
         token=target_conn.token,
         self_id=target_conn.self_id,
+        enabled=target_conn.enabled,
         auto_reconnect=target_conn.auto_reconnect,
         reconnect_interval=target_conn.reconnect_interval,
         allow_forward=getattr(target_conn, "allow_forward", False),
     )
-    # 自动重连
-    await new_conn.connect()
+    if target_conn.enabled:
+        await new_conn.start()
 
     return {"message": "连接更新成功"}
 
@@ -195,7 +204,13 @@ async def connect_connection(connection_id: str):
     if conn is None:
         raise HTTPException(status_code=404, detail="连接不存在")
 
-    success = await conn.connect()
+    config = get_config()
+    target_conn = next((item for item in config.connections if item.id == connection_id), None)
+    if target_conn is not None:
+        target_conn.enabled = True
+        ConfigManager.save(config)
+
+    success = await conn.start()
 
     if success:
         return {"message": "连接成功"}
@@ -211,6 +226,12 @@ async def disconnect_connection(connection_id: str):
 
     if conn is None:
         raise HTTPException(status_code=404, detail="连接不存在")
+
+    config = get_config()
+    target_conn = next((item for item in config.connections if item.id == connection_id), None)
+    if target_conn is not None:
+        target_conn.enabled = False
+        ConfigManager.save(config)
 
     await conn.disconnect()
 

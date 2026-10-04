@@ -30,6 +30,7 @@ connections:
     name: 我的Bot
     url: ws://localhost:3001/onebot/v11/ws
     token: ""  # OneBot v11 access_token（如有）
+    enabled: true  # 手动断开会持久改为 false，重启后不会自动连接
     auto_reconnect: true
     reconnect_interval: 5
 
