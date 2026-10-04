@@ -182,6 +182,55 @@ def command_records(groups: list[list[str]]) -> list[dict]:
     ]
 
 
+HARUKI_COMMAND_SEPARATORS = frozenset(" _-.")
+HARUKI_REGIONS = ("jp", "tw", "en", "kr", "cn")
+
+
+def haruki_flexible_literal(command: str) -> str:
+    """按 HarukiClient 指令树规则编译一个字面指令。"""
+    meaningful = [char for char in command if char not in HARUKI_COMMAND_SEPARATORS]
+    return r"[ _.-]*".join(re.escape(char) for char in meaningful)
+
+
+def haruki_command_pattern(group: list[str]) -> str:
+    """生成一个不吞参数、兼容区服前缀的 Haruki 指令正则。"""
+    alternatives: set[str] = set()
+    regions = "(?:" + "|".join(HARUKI_REGIONS) + ")"
+
+    for command in group:
+        flexible = haruki_flexible_literal(command)
+        if not flexible:
+            continue
+        alternatives.add(f"(?i:{flexible})")
+
+        # HarukiClient 仅在剥离区服前缀后仍以 / 开头时，才能命中常规 / 指令。
+        if command.startswith("/"):
+            body = haruki_flexible_literal(command[1:])
+            if body:
+                alternatives.add(rf"/{regions}[/ \t]*[ _.-]*(?i:{body})")
+                alternatives.add(rf"{regions}(?=/|[ \t])[ \t]*(?i:{flexible})")
+
+    ordered = sorted(alternatives, key=lambda item: (-len(item), item))
+    return r"^(?:" + "|".join(ordered) + ")"
+
+
+def haruki_command_records(groups: list[list[str]]) -> list[dict]:
+    """每组指令生成一条正则，匹配文本由路由器原样转发给 HarukiClient。"""
+    return [
+        {
+            "name": haruki_command_pattern(group),
+            "aliases": [],
+            "description": "",
+            "is_regex": True,
+            "is_privileged": False,
+            "group_restriction": [],
+            "user_whitelist": [],
+            "user_blacklist": [],
+        }
+        for group in groups
+    ]
+
+
 def prefix_collision_exclusion_patterns(
     own_groups: list[list[str]], other_groups: list[list[str]]
 ) -> list[str]:
@@ -283,7 +332,13 @@ def main() -> None:
                 break
 
     for connection in (
-        {"id": "hrkbot", "name": "hrkbot", "url": "ws://host.docker.internal:8000/ws"},
+        {
+            "id": "hrkbot",
+            "name": "hrkbot",
+            "url": "ws://host.docker.internal:8000/ws",
+            # 先完成路由配置，不接入生产 HrK；启用时由管理页显式连接。
+            "enabled": False,
+        },
         {
             "id": "mzkbot",
             "name": "mzkbot",
@@ -298,7 +353,7 @@ def main() -> None:
                 **connection,
                 "token": connection.get("token", ""),
                 "self_id": args.self_id,
-                "enabled": True,
+                "enabled": connection.get("enabled", True),
                 "auto_reconnect": True,
                 "reconnect_interval": 5,
                 "allow_forward": True,
@@ -327,7 +382,7 @@ def main() -> None:
             "enabled": True,
             "is_default": True,
             "exclude_patterns": [gallery_exclusion],
-            "commands": command_records(haruki),
+            "commands": haruki_command_records(haruki),
         },
     )
     upsert_command_set(

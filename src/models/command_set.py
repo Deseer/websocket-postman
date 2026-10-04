@@ -277,6 +277,7 @@ class CommandSet:
         # 按匹配词长度降序排列，确保「最长匹配」
         all_matchers.sort(key=lambda x: len(x[0]), reverse=True)
 
+        best_match: tuple[int, Command, str, str] | None = None
         for name, cmd in all_matchers:
             if cmd.is_regex:
                 match = cmd.match_regex(name, text)
@@ -284,7 +285,10 @@ class CommandSet:
                     continue
                 matched_text = match.group(0)
                 args = text[match.end() :].strip()
-                return cmd, args, matched_text
+                candidate = (len(matched_text), cmd, args, matched_text)
+                if best_match is None or candidate[0] > best_match[0]:
+                    best_match = candidate
+                continue
 
             if "@any" in name or "@self" in name:
                 match_len = self._match_with_placeholders(name, text, self_id=self_id)
@@ -293,13 +297,22 @@ class CommandSet:
 
                 matched_text = text[:match_len]
                 args = text[match_len:].strip()
-                return cmd, args, matched_text
+                candidate = (match_len, cmd, args, matched_text)
+                if best_match is None or candidate[0] > best_match[0]:
+                    best_match = candidate
+                continue
 
             if text.startswith(name):
                 # 匹配成功，提取参数（去掉匹配到的指令名，并清除首尾空格）
                 args = text[len(name) :].strip()
-                return cmd, args, name
-        return None
+                candidate = (len(name), cmd, args, name)
+                if best_match is None or candidate[0] > best_match[0]:
+                    best_match = candidate
+
+        if best_match is None:
+            return None
+        _, command, args, matched_text = best_match
+        return command, args, matched_text
 
 
 @dataclass
