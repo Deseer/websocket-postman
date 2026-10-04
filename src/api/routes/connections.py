@@ -16,6 +16,7 @@ class ConnectionCreate(BaseModel):
     name: str
     url: str
     token: str | None = None  # OneBot v11 认证 Token
+    self_id: int | None = None
     auto_reconnect: bool = True
     reconnect_interval: int = 5
     allow_forward: bool = False
@@ -27,6 +28,7 @@ class ConnectionUpdate(BaseModel):
     name: str | None = None
     url: str | None = None
     token: str | None = None
+    self_id: int | None = None
     auto_reconnect: bool | None = None
     reconnect_interval: int | None = None
     allow_forward: bool | None = None
@@ -51,6 +53,7 @@ async def get_connections():
                 "auto_reconnect": conn_config.auto_reconnect,
                 "reconnect_interval": conn_config.reconnect_interval,
                 "allow_forward": getattr(conn_config, "allow_forward", False),
+                "self_id": getattr(conn_config, "self_id", None),
                 "connected": conn_status.get("connected", False),
             }
         )
@@ -74,6 +77,7 @@ async def create_connection(data: ConnectionCreate):
         name=data.name,
         url=data.url,
         token=data.token,
+        self_id=data.self_id,
         auto_reconnect=data.auto_reconnect,
         reconnect_interval=data.reconnect_interval,
         allow_forward=data.allow_forward,
@@ -90,6 +94,7 @@ async def create_connection(data: ConnectionCreate):
         name=data.name,
         url=data.url,
         token=data.token,
+        self_id=data.self_id,
         auto_reconnect=data.auto_reconnect,
         reconnect_interval=data.reconnect_interval,
         allow_forward=data.allow_forward,
@@ -119,6 +124,10 @@ async def update_connection(connection_id: str, data: ConnectionUpdate):
         target_conn.name = data.name
     if data.url is not None:
         target_conn.url = data.url
+    if "token" in data.model_fields_set:
+        target_conn.token = data.token
+    if "self_id" in data.model_fields_set:
+        target_conn.self_id = data.self_id
     if data.auto_reconnect is not None:
         target_conn.auto_reconnect = data.auto_reconnect
     if data.reconnect_interval is not None:
@@ -143,6 +152,7 @@ async def update_connection(connection_id: str, data: ConnectionUpdate):
         name=target_conn.name,
         url=target_conn.url,
         token=target_conn.token,
+        self_id=target_conn.self_id,
         auto_reconnect=target_conn.auto_reconnect,
         reconnect_interval=target_conn.reconnect_interval,
         allow_forward=getattr(target_conn, "allow_forward", False),

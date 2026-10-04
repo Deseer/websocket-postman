@@ -23,6 +23,20 @@
       </div>
       <el-table :data="uncategorizedSets" stripe v-loading="loading">
         <el-table-column prop="name" label="名称" width="150" />
+        <el-table-column label="状态" width="85">
+          <template #default="{ row }">
+            <el-tag :type="row.enabled ? 'success' : 'info'" size="small">
+              {{ row.enabled ? '启用' : '禁用' }}
+            </el-tag>
+          </template>
+        </el-table-column>
+        <el-table-column label="模式" width="110">
+          <template #default="{ row }">
+            <el-tag :type="row.inverse_mode ? 'warning' : 'primary'" size="small">
+              {{ row.inverse_mode ? '反向排除' : '正向匹配' }}
+            </el-tag>
+          </template>
+        </el-table-column>
         <el-table-column prop="description" label="描述" show-overflow-tooltip />
         <el-table-column label="目标连接" width="150">
           <template #default="{ row }">
@@ -31,7 +45,7 @@
         </el-table-column>
         <el-table-column label="指令" width="80">
           <template #default="{ row }">
-            <el-tag size="small">{{ row.commands?.length || 0 }} 个</el-tag>
+            <el-tag size="small">{{ row.commands?.length || 0 }} 条</el-tag>
           </template>
         </el-table-column>
         <el-table-column label="操作" width="180">
@@ -81,6 +95,20 @@
       </p>
       <el-table :data="category.commandSets" stripe v-loading="loading">
         <el-table-column prop="name" label="名称" width="150" />
+        <el-table-column label="状态" width="85">
+          <template #default="{ row }">
+            <el-tag :type="row.enabled ? 'success' : 'info'" size="small">
+              {{ row.enabled ? '启用' : '禁用' }}
+            </el-tag>
+          </template>
+        </el-table-column>
+        <el-table-column label="模式" width="110">
+          <template #default="{ row }">
+            <el-tag :type="row.inverse_mode ? 'warning' : 'primary'" size="small">
+              {{ row.inverse_mode ? '反向排除' : '正向匹配' }}
+            </el-tag>
+          </template>
+        </el-table-column>
         <el-table-column prop="description" label="描述" show-overflow-tooltip />
         <el-table-column label="目标连接" width="150">
           <template #default="{ row }">
@@ -89,7 +117,7 @@
         </el-table-column>
         <el-table-column label="指令" width="80">
           <template #default="{ row }">
-            <el-tag size="small">{{ row.commands?.length || 0 }} 个</el-tag>
+            <el-tag size="small">{{ row.commands?.length || 0 }} 条</el-tag>
           </template>
         </el-table-column>
         <el-table-column label="操作" width="180">
@@ -163,8 +191,10 @@
     <!-- 指令集对话框 - 简化版 -->
     <el-dialog
       v-model="commandSetDialogVisible"
+      class="command-set-dialog"
       :title="isEditingCommandSet ? '编辑指令集' : '新建指令集'"
-      width="600px"
+      width="min(900px, 94vw)"
+      destroy-on-close
     >
       <el-form :model="commandSetForm" label-width="100px">
         <el-form-item label="名称" required>
@@ -185,8 +215,8 @@
             </el-form-item>
           </el-col>
           <el-col :span="12">
-            <el-form-item label="目标连接">
-              <el-select v-model="commandSetForm.target_ws" placeholder="选择连接（可选）" clearable style="width: 100%">
+            <el-form-item label="目标连接" required>
+              <el-select v-model="commandSetForm.target_ws" placeholder="选择目标连接" style="width: 100%">
                 <el-option
                   v-for="conn in connections"
                   :key="conn.id"
@@ -206,6 +236,23 @@
           <el-switch v-model="commandSetForm.enabled" />
           <span style="margin-left: 10px; color: #909399; font-size: 12px">禁用后该指令集不会被匹配</span>
         </el-form-item>
+
+        <el-form-item label="匹配模式">
+          <el-radio-group v-model="commandSetForm.inverse_mode">
+            <el-radio-button :label="false">正向匹配</el-radio-button>
+            <el-radio-button :label="true">反向排除</el-radio-button>
+          </el-radio-group>
+        </el-form-item>
+
+        <el-alert
+          v-if="commandSetForm.inverse_mode"
+          class="mode-alert"
+          type="warning"
+          :closable="false"
+          show-icon
+          title="反向模式会转发所有未命中下方排除规则的消息"
+          description="字面规则按消息开头匹配；需要精确边界或组合条件时可开启正则。反向指令集建议设置较低优先级。"
+        />
 
         <!-- 高级选项 - 折叠 -->
         <el-collapse v-model="advancedExpanded">
@@ -271,10 +318,33 @@
               </el-col>
             </el-row>
 
-            <!-- 指令列表 -->
-            <el-form-item label="指令列表">
+            <el-form-item label="群聊强制前缀">
+              <el-input
+                v-model="commandSetForm.requirePrefixGroupsText"
+                placeholder="群号用逗号分隔；填写 @any 表示所有群聊"
+              />
+              <div class="form-tip">私聊不受影响；群聊中必须使用上方配置的前缀。</div>
+            </el-form-item>
+
+            <el-form-item label="排除正则">
+              <el-input
+                v-model="commandSetForm.excludePatternsText"
+                type="textarea"
+                :rows="3"
+                placeholder="每行一个正则，例如 ^/(?:gall|画廊)(?:\s|$)"
+              />
+              <div class="form-tip">命中后该指令集直接跳过，可用于解决多个 Bot 的指令冲突。</div>
+            </el-form-item>
+
+            <!-- 指令/排除规则列表 -->
+            <el-form-item :label="commandSetForm.inverse_mode ? '排除规则' : '指令列表'">
               <div class="form-tip" style="margin-bottom: 8px">
-                支持占位符：<code>@any</code>（@任意人）、<code>@self</code>（@机器人本身），例如 <code>@self/enable</code>、<code>/ban @any</code>
+                <template v-if="commandSetForm.inverse_mode">
+                  例如字面规则 <code>/help</code>，或正则 <code>^/(help|status)(?:\s|$)</code>。
+                </template>
+                <template v-else>
+                  支持 <code>@any</code>（@任意人）、<code>@self</code>（@机器人本身），例如 <code>@self/enable</code>。
+                </template>
               </div>
               <div class="commands-editor">
                 <div
@@ -283,21 +353,29 @@
                   class="command-item"
                 >
                   <div class="command-row">
-                    <el-input v-model="cmd.name" placeholder="/指令名" style="width: 120px" />
-                    <el-input v-model="cmd.description" placeholder="描述" style="width: 180px" />
-                    <el-checkbox v-model="cmd.is_privileged">特权</el-checkbox>
+                    <el-input
+                      v-model="cmd.name"
+                      :placeholder="cmd.is_regex ? '^/指令(?:\\s|$)' : '/指令名'"
+                      class="command-name-input"
+                    />
+                    <el-input v-model="cmd.description" placeholder="描述（可选）" class="command-description-input" />
+                    <el-checkbox v-model="cmd.is_regex">正则</el-checkbox>
+                    <el-checkbox v-if="!commandSetForm.inverse_mode" v-model="cmd.is_privileged">特权</el-checkbox>
                     <el-button type="danger" size="small" @click="removeCommand(index)">
                       <el-icon><Delete /></el-icon>
                     </el-button>
                   </div>
-                  <div class="command-options">
-                    <el-checkbox v-model="cmd.hasTimeRestriction" @change="toggleTimeRestriction(cmd)">
+                  <div class="command-aliases">
+                    <span>别名</span>
+                    <el-input v-model="cmd.aliasesText" placeholder="多个别名用英文逗号分隔" size="small" />
+                  </div>
+                  <div v-if="!commandSetForm.inverse_mode" class="command-options">
+                    <el-checkbox v-model="cmd.hasTimeRestriction">
                       时间限制
                     </el-checkbox>
                     <template v-if="cmd.hasTimeRestriction">
                       <el-time-select
                         v-model="cmd.time_start"
-                        :max-time="cmd.time_end"
                         placeholder="开始时间"
                         start="00:00"
                         step="00:30"
@@ -308,7 +386,6 @@
                       <span style="margin: 0 5px">-</span>
                       <el-time-select
                         v-model="cmd.time_end"
-                        :min-time="cmd.time_start"
                         placeholder="结束时间"
                         start="00:00"
                         step="00:30"
@@ -319,9 +396,9 @@
                     </template>
                   </div>
                 </div>
-                <el-button type="primary" size="small" @click="addCommand">
+                <el-button type="primary" plain size="small" @click="addCommand">
                   <el-icon><Plus /></el-icon>
-                  添加指令
+                  {{ commandSetForm.inverse_mode ? '添加排除规则' : '添加指令' }}
                 </el-button>
               </div>
             </el-form-item>
@@ -397,6 +474,9 @@ const commandSetForm = ref({
   user_access_list: null,
   group_access_list: null,
   is_default: false,
+  inverse_mode: false,
+  requirePrefixGroupsText: '',
+  excludePatternsText: '',
   commands: [],
 })
 
@@ -530,7 +610,7 @@ const handleDeleteCategory = async (category) => {
 // 指令集相关方法
 const showCreateCommandSetDialog = () => {
   isEditingCommandSet.value = false
-  advancedExpanded.value = []
+  advancedExpanded.value = ['advanced']
   commandSetForm.value = {
     id: '',
     name: '',
@@ -545,6 +625,9 @@ const showCreateCommandSetDialog = () => {
     user_access_list: null,
     group_access_list: null,
     is_default: false,
+    inverse_mode: false,
+    requirePrefixGroupsText: '',
+    excludePatternsText: '',
     commands: [],
   }
   commandSetDialogVisible.value = true
@@ -568,11 +651,16 @@ const showEditCommandSetDialog = (row) => {
     user_access_list: row.user_access_list || null,
     group_access_list: row.group_access_list || null,
     is_default: row.is_default || false,
+    inverse_mode: row.inverse_mode || false,
+    requirePrefixGroupsText: (row.require_prefix_in_groups || []).join(', '),
+    excludePatternsText: (row.exclude_patterns || []).join('\n'),
     commands: row.commands?.map(cmd => {
       // 转换时间限制格式
       const hasTime = !!cmd.time_restriction
       return {
         ...cmd,
+        is_regex: cmd.is_regex || false,
+        aliasesText: (cmd.aliases || []).join(', '),
         hasTimeRestriction: hasTime,
         time_start: hasTime ? cmd.time_restriction.start : '08:00',
         time_end: hasTime ? cmd.time_restriction.end : '22:00',
@@ -586,19 +674,14 @@ const addCommand = () => {
   commandSetForm.value.commands.push({
     name: '',
     aliases: [],
+    aliasesText: '',
+    is_regex: false,
     description: '',
     is_privileged: false,
     hasTimeRestriction: false,
     time_start: '08:00',
     time_end: '22:00',
   })
-}
-
-const toggleTimeRestriction = (cmd) => {
-  if (!cmd.hasTimeRestriction) {
-    cmd.time_start = '08:00'
-    cmd.time_end = '22:00'
-  }
 }
 
 const removeCommand = (index) => {
@@ -608,6 +691,16 @@ const removeCommand = (index) => {
 const handleCommandSetSubmit = async () => {
   if (!commandSetForm.value.name.trim()) {
     ElMessage.warning('请输入指令集名称')
+    return
+  }
+
+  if (commandSetForm.value.commands.some(cmd => !cmd.name.trim())) {
+    ElMessage.warning(commandSetForm.value.inverse_mode ? '排除规则不能为空' : '指令名不能为空')
+    return
+  }
+
+  if (!commandSetForm.value.target_ws) {
+    ElMessage.warning('请选择目标连接')
     return
   }
 
@@ -633,19 +726,41 @@ const handleCommandSetSubmit = async () => {
 
   // 转换指令时间限制格式
   const processedCommands = commandSetForm.value.commands.map(cmd => {
-    const { hasTimeRestriction, time_start, time_end, ...rest } = cmd
+    const { hasTimeRestriction, time_start, time_end, aliasesText, ...rest } = cmd
     return {
       ...rest,
+      name: cmd.name.trim(),
+      aliases: aliasesText.split(',').map(item => item.trim()).filter(Boolean),
       time_restriction: hasTimeRestriction ? { start: time_start, end: time_end } : null,
     }
   })
+
+  const requirePrefixGroups = commandSetForm.value.requirePrefixGroupsText
+    .split(',')
+    .map(item => item.trim())
+    .filter(Boolean)
+    .map(item => item === '@any' ? item : Number(item))
+
+  if (requirePrefixGroups.some(item => typeof item === 'number' && !Number.isInteger(item))) {
+    ElMessage.warning('强制前缀群聊只能填写群号或 @any')
+    return
+  }
+
+  const excludePatterns = commandSetForm.value.excludePatternsText
+    .split('\n')
+    .map(item => item.trim())
+    .filter(Boolean)
 
   submitting.value = true
   try {
     const formData = {
       ...commandSetForm.value,
+      require_prefix_in_groups: requirePrefixGroups,
+      exclude_patterns: excludePatterns,
       commands: processedCommands,
     }
+    delete formData.requirePrefixGroupsText
+    delete formData.excludePatternsText
     
     if (isEditingCommandSet.value) {
       await commandSetApi.update(editingCommandSetId.value, formData)
@@ -665,7 +780,11 @@ const handleCommandSetSubmit = async () => {
     await fetchData()
   } catch (error) {
     console.error('Submit error:', error)
-    ElMessage.error(isEditingCommandSet.value ? '更新失败' : '创建失败')
+    const detail = error?.response?.data?.detail
+    const detailText = Array.isArray(detail)
+      ? detail.map(item => item.msg).join('；')
+      : detail
+    ElMessage.error(detailText || (isEditingCommandSet.value ? '更新失败' : '创建失败'))
   } finally {
     submitting.value = false
   }
@@ -744,6 +863,10 @@ onMounted(fetchData)
   width: 100%;
 }
 
+.mode-alert {
+  margin-bottom: 18px;
+}
+
 .command-item {
   display: flex;
   flex-direction: column;
@@ -758,6 +881,20 @@ onMounted(fetchData)
   display: flex;
   gap: 10px;
   align-items: center;
+}
+
+.command-name-input,
+.command-description-input {
+  flex: 1 1 220px;
+}
+
+.command-aliases {
+  display: grid;
+  grid-template-columns: 40px minmax(0, 1fr);
+  gap: 8px;
+  align-items: center;
+  color: #606266;
+  font-size: 13px;
 }
 
 .command-options {
@@ -778,5 +915,29 @@ onMounted(fetchData)
 
 :deep(.el-collapse-item__wrap) {
   border: none;
+}
+
+:deep(.command-set-dialog) {
+  display: flex;
+  flex-direction: column;
+  max-height: 90vh;
+  margin-top: 5vh !important;
+}
+
+:deep(.command-set-dialog .el-dialog__body) {
+  min-height: 0;
+  overflow-y: auto;
+}
+
+@media (max-width: 720px) {
+  .action-bar,
+  .command-row {
+    flex-wrap: wrap;
+  }
+
+  .command-name-input,
+  .command-description-input {
+    flex-basis: 100%;
+  }
 }
 </style>

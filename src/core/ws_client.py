@@ -19,6 +19,7 @@ class WebSocketConnection:
     name: str
     url: str
     token: str | None = None  # OneBot v11 认证 Token
+    self_id: int | None = None  # OneBot 握手和 lifecycle 的机器人 QQ
     auto_reconnect: bool = True
     reconnect_interval: int = 5
     allow_forward: bool = False  # 是否允许此连接主动回推到 NapCat 客户端
@@ -46,7 +47,7 @@ class WebSocketConnection:
             # 构建 headers - OneBot v11 协议需要这些头
             headers = {
                 "User-Agent": "WebSocket-Dispatcher/1.0",
-                "X-Self-ID": "0",  # 作为客户端连接，使用占位符
+                "X-Self-ID": str(self.self_id or 0),
                 "X-Client-Role": "Universal",  # 表示同时接收事件和 API 响应
             }
 
@@ -68,7 +69,7 @@ class WebSocketConnection:
 
             lifecycle_event = {
                 "time": int(time.time()),
-                "self_id": 0,
+                "self_id": self.self_id or 0,
                 "post_type": "meta_event",
                 "meta_event_type": "lifecycle",
                 "sub_type": "connect",
@@ -228,6 +229,7 @@ class WebSocketClientManager:
                 conn_config.name,
                 conn_config.url,
                 conn_config.token,
+                conn_config.self_id,
                 conn_config.auto_reconnect,
                 conn_config.reconnect_interval,
                 getattr(conn_config, "allow_forward", False),
@@ -239,6 +241,7 @@ class WebSocketClientManager:
         name: str,
         url: str,
         token: str | None = None,
+        self_id: int | None = None,
         auto_reconnect: bool = True,
         reconnect_interval: int = 5,
         allow_forward: bool = False,
@@ -249,6 +252,7 @@ class WebSocketClientManager:
             name=name,
             url=url,
             token=token,
+            self_id=self_id,
             auto_reconnect=auto_reconnect,
             reconnect_interval=reconnect_interval,
             allow_forward=allow_forward,

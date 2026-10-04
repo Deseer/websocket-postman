@@ -1,9 +1,15 @@
 """指令集管理 API"""
 from fastapi import APIRouter, HTTPException
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
 from src.core.router import CommandRouter
-from src.config import get_config, ConfigManager, CommandSetConfig, CommandConfig
+from src.config import (
+    CommandConfig,
+    CommandSetConfig,
+    ConfigManager,
+    get_config,
+    validate_command_matchers,
+)
 
 router = APIRouter()
 
@@ -12,12 +18,19 @@ class CommandCreate(BaseModel):
     """创建指令请求"""
     name: str
     aliases: list[str] = Field(default_factory=list)
+    is_regex: bool = False
     description: str = ""
     is_privileged: bool = False
     time_restriction: dict | None = None
     group_restriction: list[int] = Field(default_factory=list)
-    user_whitelist: list[int] = Field(default_factory=list)
-    user_blacklist: list[int] = Field(default_factory=list)
+    user_whitelist: list[int | str] = Field(default_factory=list)
+    user_blacklist: list[int | str] = Field(default_factory=list)
+
+    @model_validator(mode="after")
+    def validate_matchers(self):
+        """让前端在保存时直接得到可读的正则错误。"""
+        validate_command_matchers(self.name, self.aliases, self.is_regex)
+        return self
 
 
 class CommandSetCreate(BaseModel):
@@ -28,14 +41,28 @@ class CommandSetCreate(BaseModel):
     category: str | None = None
     description: str = ""
     is_public: bool = False
-    target_ws: str
+    target_ws: str = Field(min_length=1)
     priority: int = 0
     strip_prefix: bool = False
     enabled: bool = True
     user_access_list: str | None = None
     group_access_list: str | None = None
     is_default: bool = False
+    inverse_mode: bool = False
+    require_prefix_in_groups: list[int | str] = Field(default_factory=list)
+    exclude_patterns: list[str] = Field(default_factory=list)
     commands: list[CommandCreate] = Field(default_factory=list)
+
+    @model_validator(mode="after")
+    def validate_routing_rules(self):
+        CommandSetConfig(
+            id=self.id,
+            name=self.name,
+            target_ws=self.target_ws,
+            require_prefix_in_groups=self.require_prefix_in_groups,
+            exclude_patterns=self.exclude_patterns,
+        )
+        return self
 
 
 class CommandSetUpdate(BaseModel):
@@ -52,7 +79,36 @@ class CommandSetUpdate(BaseModel):
     user_access_list: str | None = None
     group_access_list: str | None = None
     is_default: bool | None = None
+    inverse_mode: bool | None = None
+    require_prefix_in_groups: list[int | str] | None = None
+    exclude_patterns: list[str] | None = None
     commands: list[CommandCreate] | None = None
+
+    @model_validator(mode="after")
+    def validate_target(self):
+        if "target_ws" in self.model_fields_set and not self.target_ws:
+            raise ValueError("目标连接不能为空")
+        if self.require_prefix_in_groups is not None:
+            invalid_groups = [
+                item
+                for item in self.require_prefix_in_groups
+                if not isinstance(item, int) and item != "@any"
+            ]
+            if invalid_groups:
+                raise ValueError("强制前缀群聊仅支持群号或 @any")
+        if self.exclude_patterns is not None:
+            import re
+
+            for pattern in self.exclude_patterns:
+                if not pattern:
+                    raise ValueError("排除正则不能为空")
+                try:
+                    compiled = re.compile(pattern)
+                except re.error as exc:
+                    raise ValueError(f"无效的排除正则 {pattern!r}: {exc}") from exc
+                if compiled.match(""):
+                    raise ValueError(f"排除正则不能匹配空字符串: {pattern!r}")
+        return self
 
 
 @router.get("")
@@ -77,16 +133,19 @@ async def get_command_sets():
             "user_access_list": getattr(cs, 'user_access_list', None),
             "group_access_list": getattr(cs, 'group_access_list', None),
             "is_default": getattr(cs, 'is_default', False),
+            "inverse_mode": getattr(cs, 'inverse_mode', False),
+            "require_prefix_in_groups": getattr(cs, 'require_prefix_in_groups', []),
+            "exclude_patterns": getattr(cs, 'exclude_patterns', []),
             "commands": [
                 {
                     "name": cmd.name,
                     "aliases": cmd.aliases,
+                    "is_regex": cmd.is_regex,
                     "description": cmd.description,
                     "is_privileged": cmd.is_privileged,
-                    "time_restriction": {
-                        "start": cmd.time_restriction.start.strftime("%H:%M"),
-                        "end": cmd.time_restriction.end.strftime("%H:%M"),
-                    } if cmd.time_restriction else None,
+                    "time_restriction": cmd.time_restriction.model_dump()
+                    if cmd.time_restriction
+                    else None,
                     "group_restriction": cmd.group_restriction,
                     "user_whitelist": cmd.user_whitelist,
                     "user_blacklist": cmd.user_blacklist,
@@ -96,6 +155,18 @@ async def get_command_sets():
         })
     
     return result
+
+
+@router.get("/groups/mutual-exclusive")
+async def get_mutual_exclusive_groups():
+    """获取所有互斥组。必须注册在动态 ID 路由之前。"""
+    command_router = CommandRouter()
+    groups = command_router.get_mutual_exclusive_groups()
+
+    return {
+        group: [{"id": cs.id, "name": cs.name} for cs in sets]
+        for group, sets in groups.items()
+    }
 
 
 @router.get("/{command_set_id}")
@@ -117,10 +188,18 @@ async def get_command_set(command_set_id: str):
         "target_ws": cs.target_ws,
         "priority": cs.priority,
         "strip_prefix": cs.strip_prefix,
+        "enabled": cs.enabled,
+        "user_access_list": cs.user_access_list,
+        "group_access_list": cs.group_access_list,
+        "is_default": cs.is_default,
+        "inverse_mode": cs.inverse_mode,
+        "require_prefix_in_groups": cs.require_prefix_in_groups,
+        "exclude_patterns": cs.exclude_patterns,
         "commands": [
             {
                 "name": cmd.name,
                 "aliases": cmd.aliases,
+                "is_regex": cmd.is_regex,
                 "description": cmd.description,
                 "is_privileged": cmd.is_privileged,
             }
@@ -144,6 +223,7 @@ async def create_command_set(data: CommandSetCreate):
         CommandConfig(
             name=cmd.name,
             aliases=cmd.aliases,
+            is_regex=cmd.is_regex,
             description=cmd.description,
             is_privileged=cmd.is_privileged,
             time_restriction=cmd.time_restriction,
@@ -169,6 +249,9 @@ async def create_command_set(data: CommandSetCreate):
         user_access_list=data.user_access_list,
         group_access_list=data.group_access_list,
         is_default=data.is_default,
+        inverse_mode=data.inverse_mode,
+        require_prefix_in_groups=data.require_prefix_in_groups,
+        exclude_patterns=data.exclude_patterns,
         commands=commands,
     )
     
@@ -208,15 +291,15 @@ async def update_command_set(command_set_id: str, data: CommandSetUpdate):
     # 更新字段
     if data.name is not None:
         target_cs.name = data.name
-    if data.prefix is not None:
-        target_cs.prefix = data.prefix
-    if data.category is not None:
-        target_cs.category = data.category
+    if "prefix" in data.model_fields_set:
+        target_cs.prefix = data.prefix or None
+    if "category" in data.model_fields_set:
+        target_cs.category = data.category or None
     if data.description is not None:
         target_cs.description = data.description
     if data.is_public is not None:
         target_cs.is_public = data.is_public
-    if data.target_ws is not None:
+    if "target_ws" in data.model_fields_set:
         target_cs.target_ws = data.target_ws
     if data.priority is not None:
         target_cs.priority = data.priority
@@ -224,25 +307,29 @@ async def update_command_set(command_set_id: str, data: CommandSetUpdate):
         target_cs.strip_prefix = data.strip_prefix
     if data.enabled is not None:
         target_cs.enabled = data.enabled
-    if data.user_access_list is not None:
-        target_cs.user_access_list = data.user_access_list if data.user_access_list else None
-    if data.group_access_list is not None:
-        target_cs.group_access_list = data.group_access_list if data.group_access_list else None
+    if "user_access_list" in data.model_fields_set:
+        target_cs.user_access_list = data.user_access_list or None
+    if "group_access_list" in data.model_fields_set:
+        target_cs.group_access_list = data.group_access_list or None
     if data.is_default is not None:
-        from src.utils.logger import logger
-        logger.info(f"Setting is_default for {target_cs.id}: {data.is_default}")
         target_cs.is_default = data.is_default
         # 如果设置为默认指令集，取消同分类下其他指令集的默认状态
         if data.is_default and target_cs.category:
             for cs in config.command_sets:
                 if cs.category == target_cs.category and cs.id != target_cs.id:
                     cs.is_default = False
-        logger.info(f"After setting, target_cs.is_default = {target_cs.is_default}")
+    if data.inverse_mode is not None:
+        target_cs.inverse_mode = data.inverse_mode
+    if data.require_prefix_in_groups is not None:
+        target_cs.require_prefix_in_groups = data.require_prefix_in_groups
+    if data.exclude_patterns is not None:
+        target_cs.exclude_patterns = data.exclude_patterns
     if data.commands is not None:
         target_cs.commands = [
             CommandConfig(
                 name=cmd.name,
                 aliases=cmd.aliases,
+                is_regex=cmd.is_regex,
                 description=cmd.description,
                 is_privileged=cmd.is_privileged,
                 time_restriction=cmd.time_restriction,
@@ -284,18 +371,3 @@ async def delete_command_set(command_set_id: str):
     command_router.load_from_config()
     
     return {"message": "指令集删除成功"}
-
-
-@router.get("/groups/mutual-exclusive")
-async def get_mutual_exclusive_groups():
-    """获取所有互斥组"""
-    command_router = CommandRouter()
-    groups = command_router.get_mutual_exclusive_groups()
-    
-    return {
-        group: [
-            {"id": cs.id, "name": cs.name}
-            for cs in sets
-        ]
-        for group, sets in groups.items()
-    }
