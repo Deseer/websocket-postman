@@ -311,7 +311,8 @@ class CommandRouter:
         if raw_text and raw_text not in candidate_texts:
             candidate_texts.append(raw_text)
 
-        # 如果有前缀，优先在对应指令集中通过「最长匹配」查找
+        # 如果有前缀，只在对应指令集中通过「最长匹配」查找。
+        # 前缀是用户的显式路由选择；该指令集未命中时不得回退到其他 Bot。
         if parsed.prefix:
             cs = self._prefix_map.get(parsed.prefix)
             if cs and cs.enabled:
@@ -320,6 +321,7 @@ class CommandRouter:
                     if match:
                         cmd, args, matched_command_text = match
                         return cs, cmd, args, matched_command_text
+            return None, None, None, None
 
         # 优先级路由：
         # 1. 如果是公共指令集且包含此指令，记录下来但不作为唯一选择（因为用户可能有更具体的选择）

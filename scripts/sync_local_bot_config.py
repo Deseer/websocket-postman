@@ -185,6 +185,7 @@ def command_records(groups: list[list[str]]) -> list[dict]:
 HARUKI_COMMAND_SEPARATORS = frozenset(" _-.")
 HARUKI_REGIONS = ("jp", "tw", "en", "kr", "cn")
 ARKBOT_COMMAND_GROUPS = [
+    ["/帮助", "/help", "/arkbot"],
     ["/干员"],
     ["/查干员", "/查"],
     ["/技能"],

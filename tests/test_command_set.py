@@ -29,6 +29,10 @@ def test_arkbot_stage_command_aliases_are_configured():
     assert ["/关卡", "/地图"] in ARKBOT_COMMAND_GROUPS
 
 
+def test_arkbot_upstream_help_aliases_are_configured():
+    assert ["/帮助", "/help", "/arkbot"] in ARKBOT_COMMAND_GROUPS
+
+
 def test_forward_mode_keeps_literal_longest_prefix_matching():
     command_set = CommandSet(
         id="normal",
@@ -298,6 +302,39 @@ async def test_router_skips_unprefixed_group_command_when_prefix_is_required():
     assert command.name == "/干员"
     assert args == "能天使"
     assert matched == "/干员"
+
+
+@pytest.mark.asyncio
+async def test_explicit_prefix_never_falls_back_to_another_command_set():
+    router = CommandRouter()
+    ark = CommandSet(
+        id="arkbot",
+        name="ArkBot",
+        prefix="ark",
+        target_ws="arkbot",
+        commands=[Command(name="/干员")],
+    )
+    endfield = CommandSet(
+        id="endfieldbot",
+        name="EndfieldBot",
+        prefix="ef",
+        target_ws="endfieldbot",
+        commands=[Command(name="/帮助")],
+    )
+    router._command_sets = [ark, endfield]
+    router._categories = []
+    router._prefix_map = {"ark": ark, "ef": endfield}
+    user = User(qq_id=10001, selected_styles={})
+    parsed = ParsedCommand(
+        raw="ark/帮助", prefix="ark", command="/帮助", args="", is_command=True
+    )
+
+    assert await router._find_command(parsed, user, group_id=20001) == (
+        None,
+        None,
+        None,
+        None,
+    )
 
 
 @pytest.mark.asyncio
