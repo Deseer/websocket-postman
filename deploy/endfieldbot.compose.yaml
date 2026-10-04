@@ -1,0 +1,28 @@
+services:
+  endfieldbot:
+    build:
+      context: ${ENDFIELD_SOURCE:-/Users/deseer/project/EndfieldBot}
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:8792:8792"
+    command: ["endfieldbot", "--config", "/run/endfieldbot.toml", "serve"]
+    environment:
+      ENDFIELD_HOST: 0.0.0.0
+      ENDFIELD_PORT: "8792"
+      ENDFIELD_RESOURCES: /resources
+      ENDFIELD_MEDIA_BASE_URL: http://host.docker.internal:8792
+      ENDFIELD_FORWARD_URL: ""
+    volumes:
+      - ${ENDFIELD_SOURCE:-/Users/deseer/project/EndfieldBot}/config.local.toml:/run/endfieldbot.toml:ro
+      - /Volumes/wd/ZmdResourceService:/resources:ro
+    read_only: true
+    tmpfs:
+      - /tmp:size=268435456
+    mem_limit: 2g
+    cpus: 2
+    pids_limit: 128
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8792/readyz', timeout=5)"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
