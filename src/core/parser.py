@@ -107,5 +107,11 @@ class CommandParser:
 
     def is_system_command(self, command: str) -> bool:
         """检查是否为系统内置指令"""
-        system_commands = {"/help", "/status", "/list", "/style", "/admin"}
+        system_commands = {
+            "pm/help",
+            "pm/status",
+            "pm/list",
+            "pm/style",
+            "pm/admin",
+        }
         return (command.split()[0] if command else "") in system_commands

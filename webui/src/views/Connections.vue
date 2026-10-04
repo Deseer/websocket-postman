@@ -118,6 +118,7 @@
 import { ref, onMounted } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { connectionApi } from '../api'
+import { generateStableId } from '../utils/id'
 
 const connections = ref([])
 const loading = ref(false)
@@ -136,22 +137,6 @@ const form = ref({
   reconnect_interval: 5,
   allow_forward: false,
 })
-
-// 生成 ID
-const generateId = (name) => {
-  const base = name
-    ? name.toLowerCase().replace(/[^a-z0-9]/g, '-').replace(/-+/g, '-').replace(/^-|-$/g, '').slice(0, 20)
-    : ''
-  
-  // 如果基础名已经足够唯一且包含非空内容，且长度适中，可以尝试不加后缀（或者让用户必填）
-  // 这里为了兼容性，如果名称是纯英文数字，则不加随机后缀，方便用户记忆
-  if (/^[a-z0-9-]+$/.test(base) && base.length > 2) {
-    return base
-  }
-  
-  const suffix = Date.now().toString(36).slice(-4)
-  return base ? `${base}-${suffix}` : `conn-${suffix}`
-}
 
 const fetchData = async () => {
   loading.value = true
@@ -203,7 +188,7 @@ const handleSubmit = async () => {
       ElMessage.success('更新成功')
     } else {
       // 自动生成 ID
-      const id = generateId(form.value.name)
+      const id = generateStableId(form.value.name, 'connection')
       await connectionApi.create({ ...form.value, id })
       ElMessage.success('创建成功')
     }

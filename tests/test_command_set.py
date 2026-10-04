@@ -13,8 +13,13 @@ from src.core.parser import ParsedCommand
 from src.core.router import CommandRouter
 from src.core.ws_client import WebSocketConnection
 from src.models.command_set import Command, CommandSet
+from src.models.command_set import Category
 from src.models.user import User
-from scripts.sync_local_bot_config import prefix_collision_exclusion_patterns
+from scripts.migrate_stable_ids import migrate_selected_styles
+from scripts.sync_local_bot_config import (
+    migrate_stable_ids,
+    prefix_collision_exclusion_patterns,
+)
 
 
 def test_forward_mode_keeps_literal_longest_prefix_matching():
@@ -74,6 +79,46 @@ def test_cross_set_prefix_collisions_generate_exact_negative_rules():
     assert command_set.find_match("/添加 gallery") is not None
     assert command_set.find_match("/添加歌曲别名foo") is None
     assert command_set.find_match("/添加角色别名 foo") is None
+
+
+def test_stable_id_migration_updates_config_references():
+    config = {
+        "connections": [{"id": "hrkbot-8kmo"}],
+        "categories": [
+            {
+                "id": "pjsk-2vd6",
+                "name": "pjsk-2vd6",
+                "default_command_set": "hrkbot-339v",
+            }
+        ],
+        "command_sets": [
+            {
+                "id": "hrkbot-339v",
+                "category": "pjsk-2vd6",
+                "target_ws": "hrkbot-8kmo",
+            }
+        ],
+    }
+
+    migrate_stable_ids(config)
+
+    assert config["connections"][0]["id"] == "hrkbot"
+    assert config["categories"][0] == {
+        "id": "pjsk",
+        "name": "pjsk",
+        "default_command_set": "hrkbot",
+    }
+    assert config["command_sets"][0] == {
+        "id": "hrkbot",
+        "category": "pjsk",
+        "target_ws": "hrkbot",
+    }
+
+
+def test_local_user_style_migration_replaces_removed_lunabot():
+    assert migrate_selected_styles({"pjsk-2vd6": "lunabot-3mgm"}) == {
+        "pjsk": "hrkbot"
+    }
 
 
 def test_inverse_mode_passes_unmatched_message_through_unchanged():
@@ -187,6 +232,64 @@ async def test_router_skips_unprefixed_group_command_when_prefix_is_required():
     assert command.name == "/干员"
     assert args == "能天使"
     assert matched == "/干员"
+
+
+@pytest.mark.asyncio
+async def test_router_falls_back_to_default_when_selected_style_is_stale():
+    router = CommandRouter()
+    hrk = CommandSet(
+        id="hrkbot",
+        name="HrKBot",
+        category="pjsk",
+        target_ws="hrkbot",
+        is_default=True,
+        commands=[Command(name="/个人信息")],
+    )
+    router._command_sets = [hrk]
+    router._categories = [
+        Category(
+            id="pjsk",
+            name="pjsk",
+            display_name="PJSK",
+            default_command_set="hrkbot",
+            is_mutex=True,
+        )
+    ]
+    router._group_sets = {"pjsk": [hrk]}
+    user = User(qq_id=10001, selected_styles={"pjsk": "removed-bot"})
+    parsed = ParsedCommand(
+        raw="/个人信息",
+        prefix=None,
+        command="/个人信息",
+        args="",
+        is_command=True,
+    )
+
+    command_set, command, _, _ = await router._find_command(
+        parsed, user, group_id=20001
+    )
+
+    assert command_set is hrk
+    assert command.name == "/个人信息"
+
+
+@pytest.mark.asyncio
+async def test_plain_internal_commands_are_not_postman_commands_without_pm_prefix():
+    router = CommandRouter()
+    user = User(qq_id=10001, selected_styles={})
+
+    for command in ("/help", "/status", "/list", "/style", "/admin"):
+        plain = ParsedCommand(
+            raw=command, prefix=None, command=command, args="", is_command=True
+        )
+        assert await router._handle_system_command(plain, user, None) is None
+
+    prefixed = ParsedCommand(
+        raw="pm/help", prefix="pm", command="/help", args="", is_command=True
+    )
+    result = await router._handle_system_command(prefixed, user, None)
+    assert result.is_system_command is True
+    assert "pm/help" in result.response
 
 
 def test_command_set_config_rejects_invalid_exclusion_pattern_and_group_marker():

@@ -74,7 +74,8 @@ class CommandRouter:
         self._build_indexes()
 
         # 初始化或更新解析器
-        prefixes = list(self._prefix_map.keys())
+        # pm 是 Postman 自身保留的短前缀；无前缀同名指令留给下游 Bot。
+        prefixes = [*self._prefix_map.keys(), "pm"]
         if self._parser:
             self._parser.update_prefixes(prefixes)
         else:
@@ -203,7 +204,7 @@ class CommandRouter:
                 is_command=True,
             )
 
-        # 检查是否为系统指令
+        # 检查是否为 pm 前缀的 Postman 内部指令
         system_result = await self._handle_system_command(parsed, user, group_id)
         if system_result:
             return system_result
@@ -355,7 +356,18 @@ class CommandRouter:
                 if category and category.is_mutex:
                     # 获取该分类下已选或默认风格
                     selected_style_id = (user.selected_styles or {}).get(cs.category)
+                    valid_style_ids = {
+                        item.id
+                        for item in self._group_sets.get(cs.category, [])
+                        if item.enabled
+                    }
+                    # 配置删除或 ID 迁移后，旧选择不能让整个互斥分类失效。
+                    if selected_style_id not in valid_style_ids:
+                        selected_style_id = None
                     active_style_id = selected_style_id or category.default_command_set
+
+                    if active_style_id not in valid_style_ids:
+                        active_style_id = None
 
                     # 如果分类强制互斥
                     if active_style_id:
@@ -556,6 +568,9 @@ class CommandRouter:
         """处理系统内置指令"""
         cmd = parsed.command.lower()
 
+        if parsed.prefix != "pm":
+            return None
+
         if cmd == "/help":
             return await self._handle_help(user)
         elif cmd == "/list":
@@ -570,18 +585,18 @@ class CommandRouter:
         return None
 
     async def _handle_help(self, user: User) -> RouteResult:
-        """处理 /help 指令"""
+        """处理 pm/help 指令"""
         lines = [
             "📖 指令帮助",
             "",
             "系统指令：",
-            "  /help - 显示帮助信息",
-            "  /status - 显示系统状态",
-            "  /list - 列出所有分类",
-            "  /list <分类> - 列出分类下的指令集",
-            "  /style list - 列出可选风格",
-            "  /style select <组> <风格> - 选择风格",
-            "  /style current - 查看当前风格",
+            "  pm/help - 显示 Postman 帮助信息",
+            "  pm/status - 显示系统状态",
+            "  pm/list - 列出所有分类",
+            "  pm/list <分类> - 列出分类下的指令集",
+            "  pm/style list - 列出可选风格",
+            "  pm/style select <组> <风格> - 选择风格",
+            "  pm/style current - 查看当前风格",
             "",
             "你也可以使用指令集前缀临时调用：",
             "  <指令集名称><指令>",
@@ -605,7 +620,7 @@ class CommandRouter:
                 if not cat.enabled:
                     continue
                 lines.append(f"  【{cat.display_name}】")
-                lines.append(f"    /list {cat.display_name}")
+                lines.append(f"    pm/list {cat.display_name}")
 
             if not self._categories:
                 lines.append("  暂无分类")
@@ -689,7 +704,7 @@ class CommandRouter:
             if len(lines) == 2:
                 lines.append("  暂无可选风格")
 
-            lines.append("用法: /style select <分类> <风格>")
+            lines.append("用法: pm/style select <分类> <风格>")
 
             return RouteResult(
                 success=True,
@@ -792,7 +807,7 @@ class CommandRouter:
 
         return RouteResult(
             success=False,
-            error_message="用法: /style [list|current|select <分类> <风格>]",
+            error_message="用法: pm/style [list|current|select <分类> <风格>]",
             is_system_command=True,
         )
 
@@ -831,10 +846,10 @@ class CommandRouter:
             lines = [
                 "🔧 管理员指令：",
                 "",
-                "  /admin allow <QQ号> <互斥组> - 允许用户切换风格",
-                "  /admin deny <QQ号> <互斥组> - 禁止用户切换风格",
-                "  /admin set <QQ号> <互斥组> <风格> - 为用户设置风格",
-                "  /admin privilege <QQ号> [on|off] - 设置用户特权",
+                "  pm/admin allow <QQ号> <互斥组> - 允许用户切换风格",
+                "  pm/admin deny <QQ号> <互斥组> - 禁止用户切换风格",
+                "  pm/admin set <QQ号> <互斥组> <风格> - 为用户设置风格",
+                "  pm/admin privilege <QQ号> [on|off] - 设置用户特权",
             ]
             return RouteResult(
                 success=True,

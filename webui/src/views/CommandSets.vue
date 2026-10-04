@@ -423,6 +423,7 @@
 import { ref, computed, onMounted } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { commandSetApi, categoryApi, connectionApi, accessListApi } from '../api'
+import { generateStableId } from '../utils/id'
 
 // 数据
 const categories = ref([])
@@ -432,15 +433,6 @@ const accessLists = ref([])
 const loading = ref(false)
 const submitting = ref(false)
 const advancedExpanded = ref([])
-
-// 生成唯一 ID
-const generateId = (name) => {
-  const base = name
-    ? name.toLowerCase().replace(/[^a-z0-9\u4e00-\u9fa5]/g, '-').replace(/-+/g, '-').slice(0, 20)
-    : ''
-  const suffix = Date.now().toString(36).slice(-4)
-  return base ? `${base}-${suffix}` : `item-${suffix}`
-}
 
 // 分类对话框
 const categoryDialogVisible = ref(false)
@@ -571,7 +563,7 @@ const handleCategorySubmit = async () => {
       ElMessage.success('分类更新成功')
     } else {
       // 自动生成 id 和 name
-      const id = generateId(categoryForm.value.display_name)
+      const id = generateStableId(categoryForm.value.display_name, 'category')
       const data = {
         ...categoryForm.value,
         id: id,
@@ -770,7 +762,7 @@ const handleCommandSetSubmit = async () => {
       ElMessage.success('指令集更新成功')
     } else {
       // 自动生成 id
-      const id = generateId(commandSetForm.value.name)
+      const id = generateStableId(commandSetForm.value.name, 'command-set')
       const data = {
         ...formData,
         id: id,
