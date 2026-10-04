@@ -14,23 +14,24 @@ def source():
     return Path(__file__).parent / "fixtures/endfieldbot"
 
 
-@pytest.mark.parametrize("short,args,canonical", [
-    ("/干员", "莱万汀 9", "/终末地 干员"),
-    ("/角色", "女管理员", "/终末地 角色"),
-    ("/武器", "黯色火炬", "/终末地 武器"),
-    ("/敌人列表", "虬兽", "/终末地 敌人列表"),
-    ("/基质规划", "智识提升+灼热伤害提升+附术 世界等级6", "/终末地 基质规划"),
-    ("/地图", "枢纽区 宝箱", "/终末地 地图"),
-    ("/插图", "莱万汀 3", "/终末地 插图"),
-    ("/help", "", "/终末地 帮助"),
-    ("/ef", "武器 黯色火炬", "/终末地"),
+@pytest.mark.parametrize("short,args,expected", [
+    ("/干员", "莱万汀 9", "/干员 莱万汀 9"),
+    ("/角色", "女管理员", "/角色 女管理员"),
+    ("/武器", "黯色火炬", "/武器 黯色火炬"),
+    ("/敌人列表", "虬兽", "/敌人列表 虬兽"),
+    ("/基质规划", "智识提升+灼热伤害提升+附术 世界等级6", "/基质规划 智识提升+灼热伤害提升+附术 世界等级6"),
+    ("/地图", "枢纽区 宝箱", "/地图 枢纽区 宝箱"),
+    ("/插图", "莱万汀 3", "/插图 莱万汀 3"),
+    ("/终末地 状态", "导电 4", "/状态 导电 4"),
+    ("/help", "", "/帮助"),
+    ("/ef", "武器 黯色火炬", "/武器 黯色火炬"),
 ])
-def test_endfield_normalizes_short_commands_without_losing_arguments(source, short, args, canonical):
+def test_endfield_normalizes_short_commands_without_losing_arguments(source, short, args, expected):
     cs = CommandSet.from_config(command_set(source))
     matched, actual_args, _ = cs.find_match(f"{short} {args}".strip())
-    # Explicit /ef 武器 can match a longer native alias too; both preserve upstream intent.
+    # Every routing alias is normalized to syntax understood by EndfieldBot.
     forwarded = f"{matched.name} {actual_args}".strip()
-    assert forwarded == f"{canonical} {args}".strip()
+    assert forwarded == expected
 
 
 @pytest.mark.asyncio
@@ -53,6 +54,6 @@ async def test_ef_prefix_isolated_from_ark_and_bare_group_commands(source, monke
 
 def test_every_upstream_alias_is_included(source):
     records = command_records(source)
-    assert len(records) == 15
+    assert len(records) == 16
     assert command_set(source)["require_prefix_in_groups"] == ["@any"]
-    assert any("/武器基质" in record["aliases"] for record in records)
+    assert any(record["name"] == "/武器基质" for record in records)

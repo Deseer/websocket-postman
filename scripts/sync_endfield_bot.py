@@ -24,15 +24,18 @@ def command_records(source: Path) -> list[dict]:
         if not isinstance(alias, str) or not isinstance(action, str):
             raise ValueError("EndfieldBot ALIASES 格式无效")
         records.append({
-            "name": f"/终末地 {alias}",
-            "aliases": [f"/{alias}", f"/zmd {alias}", f"/ef {alias}"],
+            # Postman always forwards the canonical command name. Keep that
+            # canonical form identical to EndfieldBot's native parser syntax;
+            # the namespaced spellings are routing aliases only.
+            "name": f"/{alias}",
+            "aliases": [f"/终末地 {alias}", f"/zmd {alias}", f"/ef {alias}"],
             "description": f"EndfieldBot: {action}",
             "is_regex": False,
         })
     # 短指令规范化为上游原生命令，不要求开启 short_commands。
-    help_record = next(record for record in records if record["name"] == "/终末地 帮助")
+    help_record = next(record for record in records if record["name"] == "/帮助")
     help_record["aliases"].append("/help")
-    records.append({"name": "/终末地", "aliases": ["/zmd", "/ef"], "is_regex": False})
+    records.append({"name": "/帮助", "aliases": ["/终末地", "/zmd", "/ef"], "is_regex": False})
     return records
 
 

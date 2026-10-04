@@ -23,9 +23,11 @@ async def main():
     async with connect(url, additional_headers={"Authorization": f"Bearer {token}"},
                        max_size=1_048_576) as ws:
         for index, (command, expected) in enumerate([
-            ("/终末地 帮助", "text"),
-            ("/终末地 武器 黯色火炬", "image"),
-            ("/终末地 插图 莱万汀 1", "image"),
+            ("/帮助", "text"),
+            ("/干员 管理员·女", "image"),
+            ("/地图 雪松林", "image"),
+            ("/武器 黯色火炬", "image"),
+            ("/插图 莱万汀 1", "image"),
         ]):
             event = {"post_type": "message", "message_type": "group", "sub_type": "normal",
                      "self_id": 1, "user_id": 100 + index, "group_id": 2,
@@ -41,14 +43,14 @@ async def main():
             for segment in segments:
                 file = segment.get("data", {}).get("file", "")
                 if file.startswith("http"):
-                    # 从真实 Postman 容器验证签名图链的容器到宿主机路径，不输出签名。
+                    # 从真实 NapCat 容器验证签名图链，不输出签名。
                     result = subprocess.run([
-                        "docker", "exec", "-i", "ws-dispatcher", "python", "-c",
+                        "docker", "exec", "-i", "napcat_qq1", "python3", "-c",
                         "import sys,urllib.request; data=urllib.request.urlopen(sys.stdin.read(),timeout=15).read(); "
                         "assert data.startswith(bytes.fromhex('89504e47')); print(len(data))",
                     ], input=file, text=True, capture_output=True, timeout=20)
-                    assert result.returncode == 0, "Signed image fetch from Postman failed"
-                    print("Original PNG reachable from Postman container: bytes=" + result.stdout.strip(), flush=True)
+                    assert result.returncode == 0, "Signed image fetch from NapCat failed"
+                    print("Original PNG reachable from NapCat container: bytes=" + result.stdout.strip(), flush=True)
             await ws.send(json.dumps({"status": "ok", "retcode": 0,
                                       "data": {"message_id": index}, "echo": packet["echo"]}))
             print(f"Verified {command}: {expected}, packet_bytes={len(raw.encode())}", flush=True)
