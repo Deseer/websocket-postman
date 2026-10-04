@@ -184,6 +184,16 @@ def command_records(groups: list[list[str]]) -> list[dict]:
 
 HARUKI_COMMAND_SEPARATORS = frozenset(" _-.")
 HARUKI_REGIONS = ("jp", "tw", "en", "kr", "cn")
+ARKBOT_COMMAND_GROUPS = [
+    ["/干员"],
+    ["/查干员", "/查"],
+    ["/技能"],
+    ["/模组"],
+    ["/关卡", "/地图"],
+    ["/敌人", "/敌对"],
+    ["/公招", "/公开招募"],
+    ["/皮肤", "/查皮肤"],
+]
 
 
 def haruki_flexible_literal(command: str) -> str:
@@ -414,17 +424,7 @@ def main() -> None:
             "strip_prefix": False,
             "enabled": True,
             "require_prefix_in_groups": ["@any"],
-            "commands": command_records(
-                [
-                    ["/干员"],
-                    ["/查干员", "/查"],
-                    ["/技能"],
-                    ["/模组"],
-                    ["/敌人", "/敌对"],
-                    ["/公招", "/公开招募"],
-                    ["/皮肤", "/查皮肤"],
-                ]
-            ),
+            "commands": command_records(ARKBOT_COMMAND_GROUPS),
         },
     )
 
